@@ -7,6 +7,7 @@ from evalforge.config import get_settings
 from evalforge.db import database_ready
 from evalforge.enums import EvaluationRunStatus
 from evalforge.metrics import list_metric_definitions
+from evalforge_api.evaluations import router as evaluations_router
 from evalforge_api.management import router as management_router
 
 settings = get_settings()
@@ -23,6 +24,10 @@ app = FastAPI(
         {"name": "health", "description": "Process and dependency health checks."},
         {"name": "metadata", "description": "Lifecycle states and metric definitions."},
         {"name": "management", "description": "Workspace, dataset, prompt, and model management."},
+        {
+            "name": "evaluations",
+            "description": "Queued evaluation runs, results, metrics, and pricing.",
+        },
     ],
 )
 
@@ -35,6 +40,7 @@ app.add_middleware(
 )
 
 app.include_router(management_router)
+app.include_router(evaluations_router)
 
 
 @app.get("/health/live", tags=["health"])

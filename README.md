@@ -2,7 +2,7 @@
 
 EvalForge is a small control plane for running repeatable LLM evaluations. The intended workflow is straightforward: keep datasets and prompt/model configurations versioned, run the same checks after a change, compare the result with a baseline, and let CI decide whether the change is acceptable.
 
-The repository is currently at the foundation stage. The service boundaries, database schema, queue, provider interface, metric registry, local UI, and development workflow are in place. Evaluation execution and the comparison API are deliberately next-step work; the current worker will not claim success for a run that has no stored results.
+The repository includes the management and execution foundations: immutable dataset and prompt versions, safe model configurations, PostgreSQL-backed evaluation jobs, incremental results, documented metrics, cancellation, retries, and aggregate snapshots. Baselines and CI comparison are the next product layer.
 
 ## Why this shape
 
@@ -65,7 +65,7 @@ npm run validate
 npm run test:e2e
 ```
 
-The API exposes health and metadata endpoints plus workspace, suite, dataset, prompt, and model-configuration management. Dataset uploads accept CSV and JSONL, versions are immutable, and the API supports preview/export and prompt-variable validation. The data model and API boundaries are documented in [docs/architecture.md](docs/architecture.md). See [docs/development.md](docs/development.md) for migration and local workflow details.
+The API exposes health and metadata endpoints plus workspace, suite, dataset, prompt, model-configuration, pricing, and evaluation-run management. Dataset uploads accept CSV and JSONL, versions are immutable, and the API supports preview/export, prompt-variable validation, asynchronous execution, cancellation, and result aggregation. The data model and API boundaries are documented in [docs/architecture.md](docs/architecture.md). See [docs/evaluation-lifecycle.md](docs/evaluation-lifecycle.md) for worker behavior and [docs/development.md](docs/development.md) for local workflow details.
 
 ## Project rules
 

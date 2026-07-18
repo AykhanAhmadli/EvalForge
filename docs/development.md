@@ -61,5 +61,5 @@ prompt version, and deterministic fake model configuration. Seed records are ord
 rows and can be removed through the API or a fresh local volume.
 
 The interactive API reference is available at `http://localhost:8000/docs`. The OpenAPI schema
-includes request and response models for dataset uploads, prompt version checks, and model
-configuration CRUD.
+includes request and response models for dataset uploads, prompt version checks, model
+configuration CRUD, queued evaluation runs, cancellation, result inspection, and pricing.

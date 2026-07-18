@@ -1,7 +1,22 @@
-from evalforge.providers.base import ModelProvider, ProviderRequest, ProviderResponse
+from evalforge.providers.base import (
+    ModelProvider,
+    PermanentProviderError,
+    ProviderError,
+    ProviderRequest,
+    ProviderResponse,
+    TransientProviderError,
+)
 from evalforge.providers.fake import FakeProvider
 
-__all__ = ["FakeProvider", "ModelProvider", "ProviderRequest", "ProviderResponse"]
+__all__ = [
+    "FakeProvider",
+    "ModelProvider",
+    "PermanentProviderError",
+    "ProviderError",
+    "ProviderRequest",
+    "ProviderResponse",
+    "TransientProviderError",
+]
 from evalforge.providers.openai import (
     OpenAIProvider,
     ProviderConfigurationError,

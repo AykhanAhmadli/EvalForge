@@ -4,6 +4,18 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 
+class ProviderError(RuntimeError):
+    """Base error raised by provider adapters without credential details."""
+
+
+class TransientProviderError(ProviderError):
+    """An error that may succeed when retried later."""
+
+
+class PermanentProviderError(ProviderError):
+    """An input or configuration error that should not be retried."""
+
+
 @dataclass(frozen=True)
 class ProviderRequest:
     prompt: str

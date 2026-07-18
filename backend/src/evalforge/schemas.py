@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
@@ -239,3 +240,89 @@ class ModelConfigurationResponse(APIModel):
 class ModelProviderResponse(APIModel):
     name: str
     configured: bool
+
+
+class EvaluationRunCreate(APIModel):
+    dataset_version_id: UUID
+    prompt_version_id: UUID
+    model_configuration_id: UUID
+    suite_id: UUID | None = None
+    requested_by: str | None = Field(default=None, max_length=200)
+    metrics: list[str] | None = None
+    metric_options: dict[str, Any] = Field(default_factory=dict)
+
+
+class EvaluationAggregateResponse(APIModel):
+    scope_type: str
+    scope_key: str
+    metric_name: str
+    value: Decimal | None
+    sample_count: int
+    status: str
+    details: dict[str, Any]
+
+
+class EvaluationRunResponse(APIModel):
+    id: UUID
+    workspace_id: UUID
+    suite_id: UUID | None
+    dataset_version_id: UUID
+    prompt_version_id: UUID
+    model_configuration_id: UUID
+    status: str
+    requested_by: str | None
+    failure_reason: str | None
+    queued_at: datetime | None
+    started_at: datetime | None
+    completed_at: datetime | None
+    cancelled_at: datetime | None
+    cancel_requested_at: datetime | None
+    total_cases: int
+    completed_cases: int
+    failed_cases: int
+    metric_names: list[str]
+    aggregates: list[EvaluationAggregateResponse] = Field(default_factory=list)
+
+
+class EvaluationResultResponse(APIModel):
+    id: UUID
+    run_id: UUID
+    test_case_id: UUID
+    output: dict[str, Any]
+    status: str
+    latency_ms: int | None
+    token_usage: dict[str, Any]
+    provider_trace_id: str | None
+    error_type: str | None
+    error_message: str | None
+    started_at: datetime | None
+    completed_at: datetime | None
+
+
+class ProviderPricingCreate(APIModel):
+    provider: str = Field(min_length=1, max_length=80)
+    model_name: str = Field(min_length=1, max_length=200)
+    input_cost_per_1k: Decimal = Field(ge=0)
+    output_cost_per_1k: Decimal = Field(ge=0)
+    currency: str = Field(default="USD", min_length=3, max_length=8)
+    effective_from: datetime
+    effective_to: datetime | None = None
+
+
+class ProviderPricingResponse(APIModel):
+    id: UUID
+    workspace_id: UUID
+    provider: str
+    model_name: str
+    input_cost_per_1k: Decimal
+    output_cost_per_1k: Decimal
+    currency: str
+    effective_from: datetime
+    effective_to: datetime | None
+
+
+class ProviderPricingUpdate(APIModel):
+    input_cost_per_1k: Decimal | None = Field(default=None, ge=0)
+    output_cost_per_1k: Decimal | None = Field(default=None, ge=0)
+    currency: str | None = Field(default=None, min_length=3, max_length=8)
+    effective_to: datetime | None = None

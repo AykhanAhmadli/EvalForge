@@ -10,7 +10,9 @@ class EvaluationRunStatus(StrEnum):
     running = "running"
     scoring = "scoring"
     completed = "completed"
+    partially_failed = "partially_failed"
     failed = "failed"
+    cancelled = "cancelled"
     canceled = "canceled"
 
 

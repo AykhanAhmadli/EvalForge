@@ -35,3 +35,24 @@ Variables use the form `{{ question }}`. Nested paths such as `{{ customer.name 
 Model configuration CRUD is scoped to a workspace at `/api/v1/workspaces/{workspace_id}/model-configurations`, with individual resources at `/api/v1/model-configurations/{configuration_id}`. Supported built-in adapters are `fake` and `openai`.
 
 The fake adapter is deterministic and requires no secret. The OpenAI adapter reads `OPENAI_API_KEY` and optional `OPENAI_BASE_URL` from the environment. Credentials are rejected from request parameters and are never included in responses.
+
+## Evaluation Runs
+
+- `POST /api/v1/workspaces/{workspace_id}/evaluation-runs`: validate references, create a queued run, and enqueue its PostgreSQL job.
+- `GET /api/v1/workspaces/{workspace_id}/evaluation-runs`: list workspace runs.
+- `GET /api/v1/evaluation-runs/{run_id}`: inspect lifecycle state, counters, timestamps, and aggregates.
+- `GET /api/v1/evaluation-runs/{run_id}/results`: inspect incremental outputs, provider latency, token usage, and errors.
+- `POST /api/v1/evaluation-runs/{run_id}/cancel`: request cooperative cancellation.
+
+Run creation accepts `metrics` and `metric_options`. When omitted, all registered metrics are
+used. A run is `completed`, `partially_failed`, `failed`, or `cancelled` based on stored case
+results; no status or metric is inferred from an absent result.
+
+## Pricing
+
+- `POST /api/v1/workspaces/{workspace_id}/provider-pricing`: create a rate with an effective date.
+- `GET /api/v1/workspaces/{workspace_id}/provider-pricing`: list editable rate history.
+- `PATCH /api/v1/provider-pricing/{pricing_id}`: update a rate row.
+
+Pricing is selected at execution time by effective date and retained in estimated-cost metric
+details. It is intentionally not hardcoded in provider adapters.

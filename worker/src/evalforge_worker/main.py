@@ -11,8 +11,10 @@ from sqlalchemy.orm import Session
 from evalforge.config import get_settings
 from evalforge.db import get_session_factory
 from evalforge.enums import EvaluationRunStatus, JobKind
+from evalforge.evaluation_engine import EvaluationEngine, utcnow
 from evalforge.models import EvaluationRun, Job
-from evalforge.queue import claim_next_job, complete_job, fail_job
+from evalforge.providers import TransientProviderError
+from evalforge.queue import claim_next_job, complete_job, fail_job, renew_job_lease
 
 logger = logging.getLogger("evalforge.worker")
 
@@ -22,6 +24,7 @@ class Worker:
         self.worker_id = worker_id
         self.poll_interval_seconds = poll_interval_seconds
         self._shutdown_requested = False
+        self.engine = EvaluationEngine(provider_seed=get_settings().fake_provider_seed)
 
     def request_shutdown(self, *_: object) -> None:
         self._shutdown_requested = True
@@ -49,32 +52,60 @@ class Worker:
             if job.kind == JobKind.evaluation_run.value:
                 self._process_evaluation_run(session, job)
             else:
-                raise ValueError(f"Unsupported job kind: {job.kind}")
+                raise ValueError(f"unsupported job kind: {job.kind}")
             complete_job(session, job)
+        except TransientProviderError as exc:
+            run = self._run_for_job(session, job)
+            if run is not None:
+                if job.attempts < job.max_attempts:
+                    run.status = EvaluationRunStatus.queued.value
+                    run.failure_reason = "transient provider failure; retry scheduled"
+                else:
+                    run.status = EvaluationRunStatus.failed.value
+                    run.failure_reason = "transient provider failure exhausted retries"
+                    run.completed_at = utcnow()
+                session.commit()
+            fail_job(
+                session,
+                job,
+                str(exc),
+                transient=True,
+                error_type="transient_provider_error",
+            )
         except Exception as exc:
             logger.exception("job failed", extra={"job_id": str(job.id)})
-            fail_job(session, job, str(exc))
+            run = self._run_for_job(session, job)
+            if run is not None:
+                run.status = EvaluationRunStatus.failed.value
+                run.failure_reason = str(exc)
+                run.completed_at = utcnow()
+                session.commit()
+            fail_job(session, job, str(exc), error_type=type(exc).__name__)
 
     def _process_evaluation_run(self, session: Session, job: Job) -> None:
         run_id = job.payload.get("run_id")
         if not run_id:
             raise ValueError("evaluation.run job payload requires run_id")
-
         run = session.get(EvaluationRun, uuid.UUID(str(run_id)))
         if run is None:
-            raise ValueError(f"Evaluation run not found: {run_id}")
-
-        # Do not mark an empty run as successful. The execution pipeline will
-        # replace this branch once dataset rendering and provider calls exist.
-        run.status = EvaluationRunStatus.provisioning.value
-        session.flush()
-        run.status = EvaluationRunStatus.failed.value
-        run.failure_reason = "Evaluation execution is not enabled in this release."
-        session.commit()
-        logger.info(
-            "evaluation execution unavailable",
-            extra={"run_id": str(run.id), "job_id": str(job.id)},
+            raise ValueError(f"evaluation run not found: {run_id}")
+        self.engine.execute(
+            session,
+            run,
+            job_attempt=job.attempts,
+            lease_heartbeat=lambda: renew_job_lease(session, job),
         )
+        logger.info(
+            "evaluation run finished",
+            extra={"run_id": str(run.id), "job_id": str(job.id), "status": run.status},
+        )
+
+    @staticmethod
+    def _run_for_job(session: Session, job: Job) -> EvaluationRun | None:
+        run_id = job.payload.get("run_id")
+        if not run_id:
+            return None
+        return session.get(EvaluationRun, uuid.UUID(str(run_id)))
 
 
 def configure_logging() -> None:

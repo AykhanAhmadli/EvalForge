@@ -194,6 +194,16 @@ class EvaluationRun(Base, TimestampMixin):
     )
     requested_by: Mapped[str | None] = mapped_column(String(200))
     failure_reason: Mapped[str | None] = mapped_column(Text)
+    queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    total_cases: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    completed_cases: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    failed_cases: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    metric_names: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    metric_options: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
 
 class EvaluationResult(Base):
@@ -210,9 +220,14 @@ class EvaluationResult(Base):
         ForeignKey("test_cases.id", ondelete="RESTRICT"), index=True
     )
     output: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="running", nullable=False)
     latency_ms: Mapped[int | None] = mapped_column(Integer)
     token_usage: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     provider_trace_id: Mapped[str | None] = mapped_column(String(200))
+    error_type: Mapped[str | None] = mapped_column(String(120))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -235,6 +250,7 @@ class MetricResult(Base):
     )
     metric_name: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
     value: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="valid", nullable=False)
     details: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -267,6 +283,59 @@ class RegressionRule(Base, TimestampMixin):
     threshold: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
 
 
+class ProviderPricing(Base, TimestampMixin):
+    __tablename__ = "provider_pricing"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "provider",
+            "model_name",
+            "effective_from",
+            name="uq_provider_pricing_effective",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    provider: Mapped[str] = mapped_column(String(80), nullable=False)
+    model_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    input_cost_per_1k: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    output_cost_per_1k: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), default="USD", nullable=False)
+    effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class RunAggregate(Base):
+    __tablename__ = "run_aggregates"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "scope_type",
+            "scope_key",
+            "metric_name",
+            name="uq_run_aggregates_scope_metric",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("managed_evaluation_runs.id", ondelete="CASCADE"), index=True
+    )
+    scope_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    scope_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    metric_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    value: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
+    sample_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="valid", nullable=False)
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class Job(Base, TimestampMixin):
     __tablename__ = "job_queue"
     __table_args__ = (Index("ix_job_queue_claim", "status", "run_after", "priority", "created_at"),)
@@ -283,4 +352,8 @@ class Job(Base, TimestampMixin):
     )
     locked_by: Mapped[str | None] = mapped_column(String(200))
     locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(Text)
+    last_error_type: Mapped[str | None] = mapped_column(String(120))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

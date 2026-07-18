@@ -10,7 +10,7 @@ This document describes the current system boundary and the decisions that shoul
 
 - No Redis, Celery, Kafka, or service mesh.
 - No microservice split.
-- No live external model-provider integration.
+- External providers are optional and adapter-bound; local development and tests use the fake provider.
 - No fabricated evaluation or benchmark data.
 - No production authentication model yet.
 
@@ -61,6 +61,8 @@ All records use UUID primary keys and timestamp columns. Versioned records are i
 | `managed_evaluation_runs` | Run request and status | `workspace_id`, `dataset_version_id`, `prompt_version_id`, `model_configuration_id`, `status` |
 | `managed_evaluation_results` | Per-test-case model output | `run_id`, `test_case_id`, `output`, `latency_ms`, `token_usage` |
 | `managed_metric_results` | Per-row or aggregate metric values | `run_id`, `test_case_id`, `metric_name`, `value`, `details` |
+| `provider_pricing` | Editable effective-dated cost configuration | `workspace_id`, `provider`, `model_name`, `input_cost_per_1k`, `output_cost_per_1k`, `effective_from` |
+| `run_aggregates` | Materialized run, dataset, tag, prompt, and model summaries | `run_id`, `scope_type`, `scope_key`, `metric_name`, `value` |
 | `baselines` | Named completed run reference | `workspace_id`, `name`, `evaluation_run_id` |
 | `regression_rules` | Metric threshold attached to a baseline | `baseline_id`, `metric_name`, `operator`, `threshold` |
 | `job_queue` | PostgreSQL-backed execution queue | `kind`, `payload`, `status`, `attempts`, `run_after`, `locked_by`, `locked_at` |
@@ -82,14 +84,12 @@ All records use UUID primary keys and timestamp columns. Versioned records are i
 stateDiagram-v2
   [*] --> Draft
   Draft --> Queued: API creates job
-  Queued --> Provisioning: worker claims job
-  Provisioning --> Running: inputs rendered
-  Running --> Scoring: provider outputs stored
-  Scoring --> Completed: metrics stored
-  Scoring --> Failed: unrecoverable error
-  Running --> Failed: provider or validation error
-  Queued --> Canceled
-  Running --> Canceled
+  Queued --> Running: worker claims job
+  Running --> Completed: all cases stored
+  Running --> PartiallyFailed: some permanent case failures
+  Running --> Failed: setup or all cases fail
+  Queued --> Cancelled: API cancellation
+  Running --> Cancelled: worker observes request
   Completed --> Compared: baseline comparison
   Compared --> GatePassed
   Compared --> GateFailed
@@ -148,8 +148,9 @@ Redis, Celery, Kafka, or microservices should only be introduced after queue lat
 - Dataset CRUD, CSV/JSONL upload, manual version creation, preview, and JSONL export.
 - Prompt template CRUD, immutable version history, dataset-variable validation, and version comparison.
 - Model-configuration CRUD and provider availability under `/api/v1/model-configurations` and `/api/v1/model-providers`.
+- Evaluation run creation, status, results, cancellation, effective-dated provider pricing, and aggregates under `/api/v1/evaluation-runs` and `/api/v1/provider-pricing`.
 
-The next API additions are run creation, run status, baseline management, comparison, and CI gate endpoints.
+Baseline management, comparison, and CI gate endpoints remain future product layers on top of the execution API.
 
 ## Regression Gates
 

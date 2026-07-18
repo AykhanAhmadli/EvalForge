@@ -6,7 +6,12 @@ from typing import Any
 
 import httpx
 
-from evalforge.providers.base import ProviderRequest, ProviderResponse
+from evalforge.providers.base import (
+    PermanentProviderError,
+    ProviderRequest,
+    ProviderResponse,
+    TransientProviderError,
+)
 
 
 class ProviderConfigurationError(RuntimeError):
@@ -26,17 +31,25 @@ class OpenAIProvider:
 
     def generate(self, request: ProviderRequest) -> ProviderResponse:
         started = time.perf_counter()
-        response = httpx.post(
-            f"{self._base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {self._api_key}"},
-            json={
-                "model": request.model_name,
-                "messages": [{"role": "user", "content": request.prompt}],
-                **request.parameters,
-            },
-            timeout=self._timeout_seconds,
-        )
-        response.raise_for_status()
+        try:
+            response = httpx.post(
+                f"{self._base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {self._api_key}"},
+                json={
+                    "model": request.model_name,
+                    "messages": [{"role": "user", "content": request.prompt}],
+                    **request.parameters,
+                },
+                timeout=self._timeout_seconds,
+            )
+        except httpx.RequestError as exc:
+            raise TransientProviderError("provider request failed before a response") from exc
+        if response.status_code == 429 or response.status_code >= 500:
+            raise TransientProviderError(
+                f"provider returned retryable status {response.status_code}"
+            )
+        if response.is_error:
+            raise PermanentProviderError(f"provider returned status {response.status_code}")
         payload = response.json()
         choice = payload.get("choices", [{}])[0]
         message = choice.get("message", {})
