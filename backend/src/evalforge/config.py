@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173"
     default_provider: str = "fake"
     fake_provider_seed: str = "evalforge-local"
+    api_auth_required: bool = False
+    api_keys: str = ""
+    api_key_workspaces: str = ""
+    max_request_bytes: int = 10_485_760
+    max_upload_bytes: int = 10_485_760
 
     model_config = SettingsConfigDict(
         env_file=".env",

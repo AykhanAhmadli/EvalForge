@@ -55,6 +55,7 @@ from evalforge.schemas import (
     SuiteRunCreate,
 )
 from evalforge.validation import ParsedTestCase, validate_template_variables
+from evalforge_api.security import ensure_resource_access
 
 router = APIRouter(prefix="/api/v1", tags=["evaluations"])
 DEFAULT_METRICS = [definition.name for definition in METRIC_DEFINITIONS]
@@ -68,6 +69,7 @@ def require(session: Session, model: type[Any], object_id: UUID, label: str) -> 
     value = session.get(model, object_id)
     if value is None:
         raise HTTPException(status_code=404, detail=f"{label} not found")
+    ensure_resource_access(session, value)
     return value
 
 

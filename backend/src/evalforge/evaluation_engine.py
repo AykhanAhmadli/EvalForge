@@ -165,7 +165,7 @@ class EvaluationEngine:
             except (PermanentProviderError, ValueError, TypeError, json.JSONDecodeError) as exc:
                 result.status = "failed"
                 result.error_type = type(exc).__name__
-                result.error_message = str(exc)
+                result.error_message = "provider or prompt execution failed"
                 result.completed_at = utcnow()
                 run.failed_cases += 1
                 session.commit()

@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from evalforge.config import get_settings
 from evalforge.db import get_session
 from evalforge.models import (
     Dataset,
@@ -60,6 +61,12 @@ from evalforge.validation import (
     parse_dataset,
     validate_template_variables,
 )
+from evalforge_api.security import (
+    ApiPrincipal,
+    ensure_resource_access,
+    filter_workspace_rows,
+    require_api_key,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["management"])
 
@@ -89,6 +96,7 @@ def get_or_404(session: Session, model: type[Any], object_id: UUID, kind: str) -
     value = session.get(model, object_id)
     if value is None:
         raise not_found(kind)
+    ensure_resource_access(session, value)
     return value
 
 
@@ -214,8 +222,15 @@ def _model_response(configuration: ModelConfiguration) -> ModelConfigurationResp
 
 @router.post("/workspaces", response_model=WorkspaceResponse, status_code=status.HTTP_201_CREATED)
 def create_workspace(
-    payload: WorkspaceCreate, session: Session = Depends(get_session)
+    payload: WorkspaceCreate,
+    session: Session = Depends(get_session),
+    principal: ApiPrincipal = Depends(require_api_key),
 ) -> Workspace:
+    if principal.workspace_ids is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="workspace creation requires administrative provisioning",
+        )
     workspace = Workspace(
         name=payload.name,
         slug=payload.slug or slugify(payload.name),
@@ -228,8 +243,12 @@ def create_workspace(
 
 
 @router.get("/workspaces", response_model=list[WorkspaceResponse])
-def list_workspaces(session: Session = Depends(get_session)) -> list[Workspace]:
-    return list(session.scalars(select(Workspace).order_by(Workspace.name)).all())
+def list_workspaces(
+    session: Session = Depends(get_session),
+    principal: ApiPrincipal = Depends(require_api_key),
+) -> list[Workspace]:
+    rows = list(session.scalars(select(Workspace).order_by(Workspace.name)).all())
+    return filter_workspace_rows(rows, principal)
 
 
 @router.get("/workspaces/{workspace_id}", response_model=WorkspaceResponse)
@@ -435,11 +454,33 @@ async def upload_dataset_version(
     session: Session = Depends(get_session),
 ) -> DatasetVersionResponse:
     dataset = get_or_404(session, Dataset, dataset_id, "dataset")
-    content = await file.read()
+    settings = get_settings()
+    filename = (file.filename or "").lower()
+    suffix = filename.rsplit(".", 1)[-1] if "." in filename else ""
+    suffix_format = "jsonl" if suffix in {"jsonl", "ndjson"} else suffix
+    if file_format is None and suffix_format not in {"csv", "jsonl"}:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="upload filename must end in .csv, .jsonl, or .ndjson",
+        )
+    if (
+        file_format is not None
+        and suffix_format in {"csv", "jsonl"}
+        and suffix_format != file_format
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="file format does not match the filename extension",
+        )
+    content = await file.read(settings.max_upload_bytes + 1)
+    if len(content) > settings.max_upload_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="dataset upload exceeds the configured size limit",
+        )
     inferred_format: str | None = file_format
-    if inferred_format is None and file.filename:
-        suffix = file.filename.lower().rsplit(".", 1)[-1]
-        inferred_format = "jsonl" if suffix in {"jsonl", "ndjson"} else suffix
+    if inferred_format is None:
+        inferred_format = suffix_format
     try:
         parsed_dataset = parse_dataset(content, inferred_format or "")
     except DatasetValidationError as exc:

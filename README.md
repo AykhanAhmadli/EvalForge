@@ -12,6 +12,22 @@ PostgreSQL is both the system of record and the job queue. That keeps run state,
 
 There is no Redis, Celery, Kafka, or service mesh in the repository. Those would be reasonable changes only if measured queue throughput, latency, or isolation requirements made PostgreSQL insufficient.
 
+## Architecture
+
+```mermaid
+flowchart LR
+  Browser[React dashboard] --> Auth[API key and workspace scope]
+  CI[GitHub Actions] --> CLI[EvalForge CLI]
+  CLI --> API[FastAPI]
+  Auth --> API
+  API --> DB[(PostgreSQL and job queue)]
+  Worker[Separate worker processes] --> DB
+  Worker --> Fake[Deterministic fake provider]
+  Worker -. optional runtime adapter .-> Real[External provider]
+```
+
+The detailed model and lifecycle are in [docs/architecture.md](docs/architecture.md).
+
 ## Stack
 
 - React, TypeScript, Vite, Material UI, and TanStack Query
@@ -66,6 +82,40 @@ npm run down
 npm run validate
 npm run test:e2e
 ```
+
+CI also runs explicit worker/CLI tests, Playwright, dependency and secret scanning, and Docker
+builds. See [.github/workflows/ci.yml](.github/workflows/ci.yml).
+
+## Portfolio Materials
+
+- [Three-minute demo script](docs/demo-script.md)
+- [Security notes and prompt-injection limitations](docs/security.md)
+- [Regression rule interpretation](docs/regression-rules.md)
+- [CLI usage](docs/cli.md)
+- [Metric definitions](docs/metrics.md)
+- [Benchmark runner](benchmarks/README.md)
+- [Dashboard screenshots](docs/screenshots/README.md)
+
+Screenshots and demo values are clearly labeled deterministic UI fixtures. No benchmark result is
+included until `benchmarks/run_benchmark.py` has been run against a live local stack and writes the
+measured output.
+
+## Deterministic Demo
+
+The default `fake` adapter derives its output from `FAKE_PROVIDER_SEED`, model name, and rendered
+prompt. It requires no provider key and is the default for tests and local demonstrations. To use
+a real provider, configure a model with `provider=openai`, set `OPENAI_API_KEY` only in the runtime
+environment or secret manager, and keep the provider out of fixtures and logs. Real-provider runs
+are not part of the repository's deterministic tests.
+
+## Known Limitations
+
+- Bearer API keys and workspace assignments are deployment configuration, not a full user/RBAC system.
+- PostgreSQL is intentionally used for both persistence and the queue; scale it only after measuring
+  queue contention and worker throughput.
+- Metrics are imperfect proxies for quality. A passing gate is not a general statement about a model.
+- Prompt injection, tool safety, TLS, secret rotation, encryption at rest, and backup policy require
+  deployment-level controls described in [docs/security.md](docs/security.md).
 
 The API exposes health and metadata endpoints plus workspace, configured suite, dataset, prompt,
 model-configuration, pricing, evaluation-run, baseline, and regression-rule management. Dataset

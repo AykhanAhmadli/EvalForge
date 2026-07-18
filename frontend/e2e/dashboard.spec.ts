@@ -311,6 +311,8 @@ test("covers dataset, prompt, run, comparison, export, and regression workflows"
   });
 
   await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+  await page.screenshot({ path: "../docs/screenshots/overview.png", fullPage: true });
   const navigation = page.locator('[aria-label="Primary navigation"]');
 
   await navigation.getByRole("button", { name: /Datasets/ }).click();
@@ -347,6 +349,7 @@ test("covers dataset, prompt, run, comparison, export, and regression workflows"
   await expect(page.getByText("Overall score").first()).toBeVisible();
   await page.getByRole("button", { name: "Export CSV" }).click();
   await page.getByRole("button", { name: "Export JSON" }).click();
+  await page.screenshot({ path: "../docs/screenshots/comparison.png", fullPage: true });
 
   await navigation.getByRole("button", { name: /Regression rules/ }).click();
   await page.getByLabel("Baseline name").fill("Release baseline");

@@ -12,7 +12,7 @@ This document describes the current system boundary and the decisions that shoul
 - No microservice split.
 - External providers are optional and adapter-bound; local development and tests use the fake provider.
 - No fabricated evaluation or benchmark data.
-- No production authentication model yet.
+- Production API authentication is environment-configured bearer keys with explicit workspace assignments.
 
 ## System Shape
 
@@ -22,7 +22,8 @@ flowchart LR
   CI["CI pipeline"] --> CLI["EvalForge CLI"]
   Web --> API["FastAPI backend"]
   CLI --> API
-  API --> DB[("PostgreSQL")]
+  API --> Auth["API key + workspace scope"]
+  Auth --> DB[("PostgreSQL")]
   Worker["Worker process"] --> DB
   Worker --> Adapter["Provider adapter"]
   Adapter --> Fake["Deterministic fake provider"]
@@ -50,7 +51,6 @@ All records use UUID primary keys and timestamp columns. Versioned records are i
 | Table | Purpose | Key Fields |
 | --- | --- | --- |
 | `workspaces` | Tenant boundary for management resources | `name`, `slug`, `description` |
-| `evaluation_suites` | Named collection of evaluation work | `workspace_id`, `name`, `slug` |
 | `managed_datasets` | Mutable dataset metadata | `workspace_id`, `name`, `slug`, `tags` |
 | `dataset_versions` | Immutable validated dataset snapshot | `dataset_id`, `version_number`, `source_format`, `content_hash` |
 | `evaluation_suites` | Reusable executable evaluation configuration | `workspace_id`, `dataset_version_id`, `prompt_version_id`, `model_configuration_id`, `metric_names` |
@@ -168,13 +168,15 @@ CI output must report only stored results. It must never invent benchmark number
 ## Security And Secrets
 
 - API keys are only loaded from environment variables or secret managers. The OpenAI adapter reads `OPENAI_API_KEY` and never stores it in `model_configurations`.
+- Set `API_AUTH_REQUIRED=true` and map bearer keys with `API_KEY_WORKSPACES` before exposing the API outside local development.
 - API keys are never logged, committed, stored in fixtures, or returned by API responses.
 - Provider adapters must redact credentials before emitting logs or errors.
 - Local `.env` files are ignored by git.
 
 ## Observability
 
-The API and worker use structured logs. The next observability additions are request IDs, run IDs, metrics timing, and provider error categorization.
+The API and worker use structured logs. Provider and job failures are categorized without storing
+raw provider exception text. Request IDs and broader tracing remain future observability work.
 
 ## Validation Requirement
 

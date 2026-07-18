@@ -1,4 +1,6 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+const API_KEY = import.meta.env.VITE_API_KEY as string | undefined;
+const WORKSPACE_ID = import.meta.env.VITE_WORKSPACE_ID as string | undefined;
 
 export interface HealthResponse {
   status: string;
@@ -176,7 +178,10 @@ export interface Baseline {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, init);
+  const headers = new Headers(init?.headers);
+  if (API_KEY) headers.set("Authorization", `Bearer ${API_KEY}`);
+  if (WORKSPACE_ID) headers.set("X-EvalForge-Workspace-ID", WORKSPACE_ID);
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
   if (!response.ok) {
     let message = `EvalForge API request failed: ${response.status}`;
     try {

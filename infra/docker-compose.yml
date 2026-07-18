@@ -39,6 +39,11 @@ services:
       CORS_ORIGINS: http://localhost:5173
       DEFAULT_PROVIDER: fake
       FAKE_PROVIDER_SEED: evalforge-local
+      API_AUTH_REQUIRED: ${API_AUTH_REQUIRED:-false}
+      API_KEYS: ${API_KEYS:-}
+      API_KEY_WORKSPACES: ${API_KEY_WORKSPACES:-}
+      MAX_REQUEST_BYTES: ${MAX_REQUEST_BYTES:-10485760}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-10485760}
     ports:
       - "8000:8000"
     depends_on:
@@ -76,6 +81,8 @@ services:
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
     environment:
       VITE_API_BASE_URL: http://localhost:8000
+      VITE_API_KEY: ${VITE_API_KEY:-}
+      VITE_WORKSPACE_ID: ${VITE_WORKSPACE_ID:-}
     ports:
       - "5173:5173"
     depends_on:

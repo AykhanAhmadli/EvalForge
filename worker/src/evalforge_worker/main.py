@@ -54,7 +54,7 @@ class Worker:
             else:
                 raise ValueError(f"unsupported job kind: {job.kind}")
             complete_job(session, job)
-        except TransientProviderError as exc:
+        except TransientProviderError:
             run = self._run_for_job(session, job)
             if run is not None:
                 if job.attempts < job.max_attempts:
@@ -68,19 +68,22 @@ class Worker:
             fail_job(
                 session,
                 job,
-                str(exc),
+                "transient provider failure",
                 transient=True,
                 error_type="transient_provider_error",
             )
         except Exception as exc:
-            logger.exception("job failed", extra={"job_id": str(job.id)})
+            logger.error(
+                "job failed",
+                extra={"job_id": str(job.id), "error_type": type(exc).__name__},
+            )
             run = self._run_for_job(session, job)
             if run is not None:
                 run.status = EvaluationRunStatus.failed.value
-                run.failure_reason = str(exc)
+                run.failure_reason = "evaluation job failed; inspect the stored error type"
                 run.completed_at = utcnow()
                 session.commit()
-            fail_job(session, job, str(exc), error_type=type(exc).__name__)
+            fail_job(session, job, type(exc).__name__, error_type=type(exc).__name__)
 
     def _process_evaluation_run(self, session: Session, job: Job) -> None:
         run_id = job.payload.get("run_id")

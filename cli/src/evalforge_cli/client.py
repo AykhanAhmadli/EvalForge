@@ -15,12 +15,22 @@ class UnreachableServerError(CLIError):
 
 
 class EvalForgeClient:
-    def __init__(self, api_url: str, api_key: str, *, timeout: float = 15.0) -> None:
+    def __init__(
+        self,
+        api_url: str,
+        api_key: str,
+        *,
+        workspace_id: str | None = None,
+        timeout: float = 15.0,
+    ) -> None:
         self.api_url = api_url.rstrip("/")
+        headers = {"Authorization": f"Bearer {api_key}", "Accept": "application/json"}
+        if workspace_id:
+            headers["X-EvalForge-Workspace-ID"] = workspace_id
         self._client = httpx.Client(
             base_url=self.api_url,
             timeout=timeout,
-            headers={"Authorization": f"Bearer {api_key}", "Accept": "application/json"},
+            headers=headers,
         )
 
     def close(self) -> None:
@@ -76,7 +86,11 @@ def client_from_environment(api_url: str | None = None) -> EvalForgeClient:
     api_key = os.getenv("EVALFORGE_API_KEY")
     if not api_key:
         raise CLIError("EVALFORGE_API_KEY is required")
-    return EvalForgeClient(resolved_url, api_key)
+    return EvalForgeClient(
+        resolved_url,
+        api_key,
+        workspace_id=os.getenv("EVALFORGE_WORKSPACE_ID"),
+    )
 
 
 def workspace_from_environment(workspace_id: str | None = None) -> str:

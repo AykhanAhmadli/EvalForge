@@ -2,6 +2,13 @@
 
 The live OpenAPI document is available at `/openapi.json`, with the interactive reference at `/docs` when the API is running.
 
+## Authentication
+
+Health and metric metadata endpoints are public. Management and evaluation endpoints accept
+runtime bearer keys when `API_AUTH_REQUIRED=true`; each key must be assigned to one or more
+workspace IDs through `API_KEY_WORKSPACES`. Clients send `Authorization: Bearer <key>` and
+`X-EvalForge-Workspace-ID`. Resource lookups are checked against the same workspace assignment.
+
 ## Workspaces and Suites
 
 Workspace CRUD is available at `/api/v1/workspaces`. Evaluation suites are scoped to a workspace at `/api/v1/workspaces/{workspace_id}/suites`.

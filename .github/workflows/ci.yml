@@ -7,7 +7,8 @@ on:
       - main
 
 jobs:
-  validate:
+  python:
+    name: Backend, worker, and CLI
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -31,11 +32,103 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - run: python -m pip install -e "backend[dev]" -e worker -e cli
+      - run: python -m alembic -c backend/alembic.ini upgrade head
+      - name: Backend lint
+        run: python -m ruff check backend worker cli tests benchmarks
+      - name: Backend formatting
+        run: python -m ruff format --check backend worker cli tests benchmarks
+      - name: Backend and worker typing
+        run: python -m mypy backend/src worker/src cli/src
+      - name: Backend tests
+        run: python -m pytest tests/backend -q
+      - name: Worker tests
+        run: python -m pytest tests/worker -q
+      - name: CLI tests
+        run: python -m pytest tests/cli -q
+
+  frontend:
+    name: Frontend unit checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: npm run setup
-      - run: npm run db:migrate
-      - run: npm run validate
+      - run: npm ci --prefix frontend
+      - run: npm run lint --prefix frontend
+      - run: npm run format:check --prefix frontend
+      - run: npm run typecheck --prefix frontend
+      - run: npm run test --prefix frontend -- --run
+
+  playwright:
+    name: Playwright
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --prefix frontend
+      - run: npx --prefix frontend playwright install --with-deps chromium
+      - run: npm run test:e2e --prefix frontend
+
+  security:
+    name: Dependency and secret scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: python -m pip install pip-audit
+      - run: python -m pip install -e "backend[dev]" -e worker -e cli
+      - run: pip-audit
+      - run: npm ci --prefix frontend
+      - run: npm audit --prefix frontend --audit-level=high --omit=dev
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
+  docker:
+    name: Docker builds and image scans
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - run: docker build -f infra/docker/backend.Dockerfile -t evalforge-backend:ci .
+      - run: docker build -f infra/docker/worker.Dockerfile -t evalforge-worker:ci .
+      - run: docker build -f infra/docker/frontend.Dockerfile -t evalforge-frontend:ci .
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: evalforge-backend:ci
+          scanners: vuln,secret
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: evalforge-worker:ci
+          scanners: vuln,secret
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: evalforge-frontend:ci
+          scanners: vuln,secret
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          exit-code: "1"
