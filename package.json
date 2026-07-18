@@ -1,0 +1,27 @@
+{
+  "name": "evalforge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Control plane for repeatable LLM evaluations and regression checks.",
+  "scripts": {
+    "setup": "python -m pip install -e \"backend[dev]\" -e worker -e cli && npm --prefix frontend install",
+    "dev": "docker compose -f infra/docker-compose.yml up --build",
+    "dev:detached": "docker compose -f infra/docker-compose.yml up --build -d",
+    "down": "docker compose -f infra/docker-compose.yml down --remove-orphans",
+    "logs": "docker compose -f infra/docker-compose.yml logs -f",
+    "db:migrate": "cd backend && alembic upgrade head",
+    "format": "python -m ruff format backend worker cli tests && npm --prefix frontend run format",
+    "format:check": "python -m ruff format --check backend worker cli tests && npm --prefix frontend run format:check",
+    "lint": "python -m ruff check backend worker cli tests && npm --prefix frontend run lint",
+    "typecheck": "python -m mypy backend/src worker/src cli/src && npm --prefix frontend run typecheck",
+    "test": "python -m pytest tests && npm --prefix frontend run test -- --run",
+    "test:e2e": "npm --prefix frontend run test:e2e",
+    "validate:backend": "python -m ruff check backend worker cli tests && python -m ruff format --check backend worker cli tests && python -m mypy backend/src worker/src cli/src && python -m pytest tests",
+    "validate:frontend": "npm --prefix frontend run lint && npm --prefix frontend run format:check && npm --prefix frontend run typecheck && npm --prefix frontend run test -- --run",
+    "validate": "npm run validate:backend && npm run validate:frontend"
+  },
+  "engines": {
+    "node": ">=20",
+    "python": ">=3.11"
+  }
+}
