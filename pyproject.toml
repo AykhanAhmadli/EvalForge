@@ -5,6 +5,7 @@ src = ["backend/src", "worker/src", "cli/src", "tests"]
 
 [tool.ruff.lint]
 select = ["B", "E", "F", "I", "UP"]
+extend-ignore = ["B008"]
 
 [tool.mypy]
 python_version = "3.11"
@@ -16,4 +17,4 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 addopts = "-q"
 pythonpath = ["backend/src", "worker/src", "cli/src"]
-testpaths = ["tests/backend"]
+testpaths = ["tests"]

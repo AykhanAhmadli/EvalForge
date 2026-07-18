@@ -55,3 +55,11 @@ npm run db:migrate
 ```
 
 Docker Compose runs migrations automatically before the API and worker start.
+
+The management migration seeds a local workspace, starter evaluation suite, dataset version,
+prompt version, and deterministic fake model configuration. Seed records are ordinary database
+rows and can be removed through the API or a fresh local volume.
+
+The interactive API reference is available at `http://localhost:8000/docs`. The OpenAPI schema
+includes request and response models for dataset uploads, prompt version checks, and model
+configuration CRUD.

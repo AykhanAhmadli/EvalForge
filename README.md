@@ -65,7 +65,7 @@ npm run validate
 npm run test:e2e
 ```
 
-The API exposes `/health/live`, `/health/ready`, `/api/v1/lifecycle`, and `/api/v1/metrics` today. The data model and the next API boundaries are documented in [docs/architecture.md](docs/architecture.md). See [docs/development.md](docs/development.md) for migration and local workflow details.
+The API exposes health and metadata endpoints plus workspace, suite, dataset, prompt, and model-configuration management. Dataset uploads accept CSV and JSONL, versions are immutable, and the API supports preview/export and prompt-variable validation. The data model and API boundaries are documented in [docs/architecture.md](docs/architecture.md). See [docs/development.md](docs/development.md) for migration and local workflow details.
 
 ## Project rules
 

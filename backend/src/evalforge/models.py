@@ -5,21 +5,12 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import (
-    Boolean,
-    DateTime,
-    ForeignKey,
-    Integer,
-    Numeric,
-    String,
-    Text,
-    UniqueConstraint,
-)
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.sql import func
 
-from evalforge.enums import EvaluationItemStatus, EvaluationRunStatus, JobStatus
+from evalforge.enums import EvaluationRunStatus, JobStatus
 
 
 class Base(DeclarativeBase):
@@ -32,187 +23,263 @@ def uuid_pk() -> Mapped[uuid.UUID]:
 
 class TimestampMixin:
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+
+class Workspace(Base, TimestampMixin):
+    __tablename__ = "workspaces"
+    __table_args__ = (UniqueConstraint("slug", name="uq_workspaces_slug"),)
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    slug: Mapped[str] = mapped_column(String(80), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+
+
+class EvaluationSuite(Base, TimestampMixin):
+    __tablename__ = "evaluation_suites"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "slug", name="uq_evaluation_suites_workspace_slug"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    slug: Mapped[str] = mapped_column(String(80), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
 
 
 class Dataset(Base, TimestampMixin):
-    __tablename__ = "datasets"
-    __table_args__ = (UniqueConstraint("name", name="uq_datasets_name"),)
-
-    id: Mapped[uuid.UUID] = uuid_pk()
-    name: Mapped[str] = mapped_column(String(200), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text)
-
-    rows: Mapped[list[DatasetRow]] = relationship(back_populates="dataset", cascade="all, delete")
-
-
-class DatasetRow(Base, TimestampMixin):
-    __tablename__ = "dataset_rows"
+    __tablename__ = "managed_datasets"
     __table_args__ = (
-        UniqueConstraint(
-            "dataset_id", "ordinal", "version", name="uq_dataset_rows_position_version"
-        ),
+        UniqueConstraint("workspace_id", "slug", name="uq_managed_datasets_workspace_slug"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
-    dataset_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"))
-    input: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    expected_output: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    slug: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    tags: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+
+
+class DatasetVersion(Base):
+    __tablename__ = "dataset_versions"
+    __table_args__ = (
+        UniqueConstraint("dataset_id", "version_number", name="uq_dataset_versions_number"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    dataset_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("managed_datasets.id", ondelete="CASCADE"), index=True
+    )
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_format: Mapped[str] = mapped_column(String(16), nullable=False)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    schema_fields: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class TestCase(Base):
+    __tablename__ = "test_cases"
+    __table_args__ = (
+        UniqueConstraint("dataset_version_id", "row_number", name="uq_test_cases_version_row"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    dataset_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("dataset_versions.id", ondelete="CASCADE"), index=True
+    )
+    row_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    input: Mapped[Any] = mapped_column(JSONB, nullable=False)
+    expected_output: Mapped[Any] = mapped_column(JSONB, nullable=False)
     row_metadata: Mapped[dict[str, Any]] = mapped_column(
         "metadata", JSONB, default=dict, nullable=False
     )
-    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
-    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    tags: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
-    dataset: Mapped[Dataset] = relationship(back_populates="rows")
 
-
-class PromptConfig(Base, TimestampMixin):
-    __tablename__ = "prompt_configs"
-    __table_args__ = (UniqueConstraint("name", "version", name="uq_prompt_configs_name_version"),)
+class PromptTemplate(Base, TimestampMixin):
+    __tablename__ = "prompt_templates"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "slug", name="uq_prompt_templates_workspace_slug"),
+    )
 
     id: Mapped[uuid.UUID] = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
+    slug: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    tags: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+
+
+class PromptVersion(Base):
+    __tablename__ = "prompt_versions"
+    __table_args__ = (
+        Index("ix_prompt_versions_template_id", "prompt_template_id"),
+        UniqueConstraint("prompt_template_id", "version_number", name="uq_prompt_versions_number"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    prompt_template_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("prompt_templates.id", ondelete="CASCADE")
+    )
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
     template: Mapped[str] = mapped_column(Text, nullable=False)
-    variables: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
-    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    variables: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    created_by: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
-class ModelConfig(Base, TimestampMixin):
-    __tablename__ = "model_configs"
-    __table_args__ = (UniqueConstraint("name", "version", name="uq_model_configs_name_version"),)
+class ModelConfiguration(Base, TimestampMixin):
+    __tablename__ = "model_configurations"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "slug", name="uq_model_configurations_workspace_slug"),
+    )
 
     id: Mapped[uuid.UUID] = uuid_pk()
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
+    slug: Mapped[str] = mapped_column(String(100), nullable=False)
     provider: Mapped[str] = mapped_column(String(80), nullable=False)
     model_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    temperature: Mapped[Decimal] = mapped_column(Numeric(4, 3), nullable=False)
+    max_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     parameters: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
-    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-
-
-class MetricDefinitionRecord(Base, TimestampMixin):
-    __tablename__ = "metrics"
-    __table_args__ = (UniqueConstraint("name", "version", name="uq_metrics_name_version"),)
-
-    id: Mapped[uuid.UUID] = uuid_pk()
-    name: Mapped[str] = mapped_column(String(120), nullable=False)
-    semantics: Mapped[str] = mapped_column(Text, nullable=False)
-    direction: Mapped[str] = mapped_column(String(32), nullable=False)
-    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
 class EvaluationRun(Base, TimestampMixin):
-    __tablename__ = "evaluation_runs"
+    __tablename__ = "managed_evaluation_runs"
 
     id: Mapped[uuid.UUID] = uuid_pk()
-    dataset_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("datasets.id", ondelete="RESTRICT"))
-    prompt_config_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("prompt_configs.id", ondelete="RESTRICT")
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
     )
-    model_config_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("model_configs.id", ondelete="RESTRICT")
+    suite_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("evaluation_suites.id", ondelete="SET NULL")
     )
-    baseline_run_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("evaluation_runs.id", ondelete="SET NULL")
+    dataset_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("dataset_versions.id", ondelete="RESTRICT")
+    )
+    prompt_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("prompt_versions.id", ondelete="RESTRICT")
+    )
+    model_configuration_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("model_configurations.id", ondelete="RESTRICT")
     )
     status: Mapped[str] = mapped_column(
-        String(32),
-        default=EvaluationRunStatus.draft.value,
-        nullable=False,
-        index=True,
+        String(32), default=EvaluationRunStatus.draft.value, nullable=False, index=True
     )
     requested_by: Mapped[str | None] = mapped_column(String(200))
     failure_reason: Mapped[str | None] = mapped_column(Text)
 
 
-class EvaluationItem(Base, TimestampMixin):
-    __tablename__ = "evaluation_items"
+class EvaluationResult(Base):
+    __tablename__ = "managed_evaluation_results"
     __table_args__ = (
-        UniqueConstraint("run_id", "dataset_row_id", name="uq_evaluation_items_run_row"),
+        UniqueConstraint("run_id", "test_case_id", name="uq_managed_results_run_case"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
-    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("evaluation_runs.id", ondelete="CASCADE"))
-    dataset_row_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("dataset_rows.id", ondelete="RESTRICT")
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("managed_evaluation_runs.id", ondelete="CASCADE"), index=True
     )
-    status: Mapped[str] = mapped_column(
-        String(32),
-        default=EvaluationItemStatus.pending.value,
-        nullable=False,
-    )
-    rendered_prompt_hash: Mapped[str | None] = mapped_column(String(128))
-
-
-class EvaluationResult(Base, TimestampMixin):
-    __tablename__ = "evaluation_results"
-
-    id: Mapped[uuid.UUID] = uuid_pk()
-    item_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("evaluation_items.id", ondelete="CASCADE")
+    test_case_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("test_cases.id", ondelete="RESTRICT"), index=True
     )
     output: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     latency_ms: Mapped[int | None] = mapped_column(Integer)
     token_usage: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     provider_trace_id: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
-class MetricResult(Base, TimestampMixin):
-    __tablename__ = "metric_results"
+class MetricResult(Base):
+    __tablename__ = "managed_metric_results"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id", "test_case_id", "metric_name", name="uq_managed_metric_results_key"
+        ),
+    )
 
     id: Mapped[uuid.UUID] = uuid_pk()
-    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("evaluation_runs.id", ondelete="CASCADE"))
-    item_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("evaluation_items.id", ondelete="CASCADE")
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("managed_evaluation_runs.id", ondelete="CASCADE"), index=True
+    )
+    test_case_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("test_cases.id", ondelete="CASCADE")
     )
     metric_name: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
     value: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
     details: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
-class EvaluationComparison(Base, TimestampMixin):
-    __tablename__ = "evaluation_comparisons"
+class Baseline(Base, TimestampMixin):
+    __tablename__ = "baselines"
+    __table_args__ = (UniqueConstraint("workspace_id", "name", name="uq_baselines_workspace_name"),)
 
     id: Mapped[uuid.UUID] = uuid_pk()
-    baseline_run_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("evaluation_runs.id", ondelete="CASCADE")
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
     )
-    candidate_run_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("evaluation_runs.id", ondelete="CASCADE")
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    evaluation_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("managed_evaluation_runs.id", ondelete="RESTRICT")
     )
-    summary: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
-    regression_detected: Mapped[bool] = mapped_column(Boolean, nullable=False)
+
+
+class RegressionRule(Base, TimestampMixin):
+    __tablename__ = "regression_rules"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    baseline_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("baselines.id", ondelete="CASCADE"), index=True
+    )
+    metric_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    operator: Mapped[str] = mapped_column(String(8), nullable=False)
+    threshold: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
 
 
 class Job(Base, TimestampMixin):
     __tablename__ = "job_queue"
+    __table_args__ = (Index("ix_job_queue_claim", "status", "run_after", "priority", "created_at"),)
 
     id: Mapped[uuid.UUID] = uuid_pk()
     kind: Mapped[str] = mapped_column(String(120), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
-    status: Mapped[str] = mapped_column(
-        String(32),
-        default=JobStatus.queued.value,
-        nullable=False,
-        index=True,
-    )
+    status: Mapped[str] = mapped_column(String(32), default=JobStatus.queued.value, nullable=False)
     priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     max_attempts: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     run_after: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     locked_by: Mapped[str | None] = mapped_column(String(200))
     locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

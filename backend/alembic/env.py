@@ -15,6 +15,31 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+LEGACY_TABLES = {
+    "datasets",
+    "dataset_rows",
+    "prompt_configs",
+    "model_configs",
+    "metrics",
+    "evaluation_runs",
+    "evaluation_items",
+    "evaluation_results",
+    "metric_results",
+    "evaluation_comparisons",
+}
+
+
+def include_object(
+    object_: object,
+    name: str | None,
+    type_: str,
+    reflected: bool,
+    compare_to: object | None,
+) -> bool:
+    if type_ == "table" and reflected and name in LEGACY_TABLES:
+        return False
+    return True
+
 
 def get_url() -> str:
     return get_settings().database_url
@@ -42,7 +67,11 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            include_object=include_object,
+        )
 
         with context.begin_transaction():
             context.run_migrations()
