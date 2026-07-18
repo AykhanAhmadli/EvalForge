@@ -5,6 +5,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -13,28 +14,36 @@ from evalforge.db import get_session
 from evalforge.enums import EvaluationRunStatus, JobKind, JobStatus
 from evalforge.metrics import METRIC_BY_NAME, METRIC_DEFINITIONS
 from evalforge.models import (
+    Baseline,
     Dataset,
     DatasetVersion,
     EvaluationResult,
     EvaluationRun,
     EvaluationSuite,
     Job,
+    MetricResult,
     ModelConfiguration,
     PromptTemplate,
     PromptVersion,
     ProviderPricing,
+    RegressionRule,
     RunAggregate,
     TestCase,
     Workspace,
 )
 from evalforge.schemas import (
+    BaselineCreate,
+    BaselineResponse,
     EvaluationAggregateResponse,
     EvaluationResultResponse,
     EvaluationRunCreate,
     EvaluationRunResponse,
+    MetricResultResponse,
     ProviderPricingCreate,
     ProviderPricingResponse,
     ProviderPricingUpdate,
+    RegressionRuleCreate,
+    RegressionRuleResponse,
 )
 from evalforge.validation import ParsedTestCase, validate_template_variables
 
@@ -218,6 +227,19 @@ def list_evaluation_results(
     return [EvaluationResultResponse.model_validate(result) for result in results]
 
 
+@router.get("/evaluation-runs/{run_id}/metric-results", response_model=list[MetricResultResponse])
+def list_metric_results(
+    run_id: UUID, session: Session = Depends(get_session)
+) -> list[MetricResultResponse]:
+    require(session, EvaluationRun, run_id, "evaluation run")
+    results = session.scalars(
+        select(MetricResult)
+        .where(MetricResult.run_id == run_id)
+        .order_by(MetricResult.test_case_id, MetricResult.metric_name)
+    ).all()
+    return [MetricResultResponse.model_validate(result) for result in results]
+
+
 @router.post("/evaluation-runs/{run_id}/cancel", response_model=EvaluationRunResponse)
 def cancel_evaluation_run(
     run_id: UUID, session: Session = Depends(get_session)
@@ -303,3 +325,103 @@ def update_provider_pricing(
         raise HTTPException(status_code=409, detail="pricing could not be updated") from exc
     session.refresh(pricing)
     return pricing
+
+
+def _baseline_response(session: Session, baseline: Baseline) -> BaselineResponse:
+    rules = session.scalars(
+        select(RegressionRule)
+        .where(RegressionRule.baseline_id == baseline.id)
+        .order_by(RegressionRule.metric_name)
+    ).all()
+    return BaselineResponse(
+        id=baseline.id,
+        workspace_id=baseline.workspace_id,
+        name=baseline.name,
+        evaluation_run_id=baseline.evaluation_run_id,
+        rules=[RegressionRuleResponse.model_validate(rule) for rule in rules],
+    )
+
+
+@router.post(
+    "/workspaces/{workspace_id}/baselines",
+    response_model=BaselineResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_baseline(
+    workspace_id: UUID,
+    payload: BaselineCreate,
+    session: Session = Depends(get_session),
+) -> BaselineResponse:
+    require(session, Workspace, workspace_id, "workspace")
+    run = require(session, EvaluationRun, payload.evaluation_run_id, "evaluation run")
+    if run.workspace_id != workspace_id:
+        raise HTTPException(status_code=404, detail="evaluation run not found in workspace")
+    if run.status not in {"completed", "partially_failed"}:
+        raise HTTPException(status_code=422, detail="only finished runs can be baselines")
+    baseline = Baseline(
+        workspace_id=workspace_id,
+        name=payload.name,
+        evaluation_run_id=payload.evaluation_run_id,
+    )
+    session.add(baseline)
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=409, detail="a baseline with this name already exists"
+        ) from exc
+    session.refresh(baseline)
+    return _baseline_response(session, baseline)
+
+
+@router.get("/workspaces/{workspace_id}/baselines", response_model=list[BaselineResponse])
+def list_baselines(
+    workspace_id: UUID, session: Session = Depends(get_session)
+) -> list[BaselineResponse]:
+    require(session, Workspace, workspace_id, "workspace")
+    baselines = session.scalars(
+        select(Baseline).where(Baseline.workspace_id == workspace_id).order_by(Baseline.name)
+    ).all()
+    return [_baseline_response(session, baseline) for baseline in baselines]
+
+
+@router.delete("/baselines/{baseline_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_baseline(baseline_id: UUID, session: Session = Depends(get_session)) -> Response:
+    baseline = require(session, Baseline, baseline_id, "baseline")
+    session.delete(baseline)
+    session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/baselines/{baseline_id}/rules",
+    response_model=RegressionRuleResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_regression_rule(
+    baseline_id: UUID,
+    payload: RegressionRuleCreate,
+    session: Session = Depends(get_session),
+) -> RegressionRule:
+    require(session, Baseline, baseline_id, "baseline")
+    if payload.metric_name not in METRIC_BY_NAME:
+        raise HTTPException(status_code=422, detail="metric is not registered")
+    rule = RegressionRule(
+        baseline_id=baseline_id,
+        metric_name=payload.metric_name,
+        operator=payload.operator,
+        threshold=payload.threshold,
+    )
+    session.add(rule)
+    session.commit()
+    session.refresh(rule)
+    return rule
+
+
+@router.delete("/regression-rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_regression_rule(rule_id: UUID, session: Session = Depends(get_session)) -> Response:
+    rule = require(session, RegressionRule, rule_id, "regression rule")
+    session.delete(rule)
+    session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

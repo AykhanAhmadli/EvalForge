@@ -299,6 +299,16 @@ class EvaluationResultResponse(APIModel):
     completed_at: datetime | None
 
 
+class MetricResultResponse(APIModel):
+    id: UUID
+    run_id: UUID
+    test_case_id: UUID | None
+    metric_name: str
+    value: Decimal
+    status: str
+    details: dict[str, Any]
+
+
 class ProviderPricingCreate(APIModel):
     provider: str = Field(min_length=1, max_length=80)
     model_name: str = Field(min_length=1, max_length=200)
@@ -326,3 +336,30 @@ class ProviderPricingUpdate(APIModel):
     output_cost_per_1k: Decimal | None = Field(default=None, ge=0)
     currency: str | None = Field(default=None, min_length=3, max_length=8)
     effective_to: datetime | None = None
+
+
+class RegressionRuleCreate(APIModel):
+    metric_name: str = Field(min_length=1, max_length=120)
+    operator: Literal["<", "<=", ">", ">=", "="]
+    threshold: Decimal
+
+
+class RegressionRuleResponse(APIModel):
+    id: UUID
+    baseline_id: UUID
+    metric_name: str
+    operator: str
+    threshold: Decimal
+
+
+class BaselineCreate(APIModel):
+    name: str = Field(min_length=1, max_length=160)
+    evaluation_run_id: UUID
+
+
+class BaselineResponse(APIModel):
+    id: UUID
+    workspace_id: UUID
+    name: str
+    evaluation_run_id: UUID
+    rules: list[RegressionRuleResponse] = Field(default_factory=list)
