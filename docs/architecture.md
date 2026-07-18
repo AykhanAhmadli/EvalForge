@@ -53,6 +53,7 @@ All records use UUID primary keys and timestamp columns. Versioned records are i
 | `evaluation_suites` | Named collection of evaluation work | `workspace_id`, `name`, `slug` |
 | `managed_datasets` | Mutable dataset metadata | `workspace_id`, `name`, `slug`, `tags` |
 | `dataset_versions` | Immutable validated dataset snapshot | `dataset_id`, `version_number`, `source_format`, `content_hash` |
+| `evaluation_suites` | Reusable executable evaluation configuration | `workspace_id`, `dataset_version_id`, `prompt_version_id`, `model_configuration_id`, `metric_names` |
 | `test_cases` | Required input/output row plus metadata | `dataset_version_id`, `row_number`, `input`, `expected_output`, `tags` |
 | `prompt_templates` | Named prompt container | `workspace_id`, `name`, `slug`, `tags` |
 | `prompt_versions` | Immutable template text and extracted variables | `prompt_template_id`, `version_number`, `template`, `variables` |
@@ -64,7 +65,7 @@ All records use UUID primary keys and timestamp columns. Versioned records are i
 | `provider_pricing` | Editable effective-dated cost configuration | `workspace_id`, `provider`, `model_name`, `input_cost_per_1k`, `output_cost_per_1k`, `effective_from` |
 | `run_aggregates` | Materialized run, dataset, tag, prompt, and model summaries | `run_id`, `scope_type`, `scope_key`, `metric_name`, `value` |
 | `baselines` | Named completed run reference | `workspace_id`, `name`, `evaluation_run_id` |
-| `regression_rules` | Metric threshold attached to a baseline | `baseline_id`, `metric_name`, `operator`, `threshold` |
+| `regression_rules` | Typed threshold attached to a baseline | `baseline_id`, `rule_type`, `metric_name`, `tag`, `operator`, `threshold` |
 | `job_queue` | PostgreSQL-backed execution queue | `kind`, `payload`, `status`, `attempts`, `run_after`, `locked_by`, `locked_at` |
 
 ### Important Relationships
@@ -150,7 +151,8 @@ Redis, Celery, Kafka, or microservices should only be introduced after queue lat
 - Model-configuration CRUD and provider availability under `/api/v1/model-configurations` and `/api/v1/model-providers`.
 - Evaluation run creation, status, results, cancellation, effective-dated provider pricing, and aggregates under `/api/v1/evaluation-runs` and `/api/v1/provider-pricing`.
 
-Baseline management, comparison, and CI gate endpoints remain future product layers on top of the execution API.
+Baseline management, typed regression rules, comparison, and the CI CLI are product layers on top
+of the execution API. Rule interpretation is documented in [regression-rules.md](regression-rules.md).
 
 ## Regression Gates
 

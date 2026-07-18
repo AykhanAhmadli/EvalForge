@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -31,6 +31,12 @@ from evalforge.models import (
     TestCase,
     Workspace,
 )
+from evalforge.regression import (
+    CaseSample,
+    MetricSample,
+    RunSnapshot,
+    evaluate_regression,
+)
 from evalforge.schemas import (
     BaselineCreate,
     BaselineResponse,
@@ -42,8 +48,11 @@ from evalforge.schemas import (
     ProviderPricingCreate,
     ProviderPricingResponse,
     ProviderPricingUpdate,
+    RegressionComparisonResponse,
     RegressionRuleCreate,
     RegressionRuleResponse,
+    RegressionViolationResponse,
+    SuiteRunCreate,
 )
 from evalforge.validation import ParsedTestCase, validate_template_variables
 
@@ -95,12 +104,7 @@ def _run_response(session: Session, run: EvaluationRun) -> EvaluationRunResponse
     )
 
 
-@router.post(
-    "/workspaces/{workspace_id}/evaluation-runs",
-    response_model=EvaluationRunResponse,
-    status_code=status.HTTP_201_CREATED,
-)
-def create_evaluation_run(
+def _create_evaluation_run(
     workspace_id: UUID,
     payload: EvaluationRunCreate,
     session: Session = Depends(get_session),
@@ -191,6 +195,56 @@ def create_evaluation_run(
     return _run_response(session, run)
 
 
+@router.post(
+    "/workspaces/{workspace_id}/evaluation-runs",
+    response_model=EvaluationRunResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_evaluation_run(
+    workspace_id: UUID,
+    payload: EvaluationRunCreate,
+    session: Session = Depends(get_session),
+) -> EvaluationRunResponse:
+    return _create_evaluation_run(workspace_id, payload, session)
+
+
+@router.post(
+    "/workspaces/{workspace_id}/suites/{suite_id}/runs",
+    response_model=EvaluationRunResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_suite_run(
+    workspace_id: UUID,
+    suite_id: UUID,
+    payload: SuiteRunCreate,
+    session: Session = Depends(get_session),
+) -> EvaluationRunResponse:
+    suite = require(session, EvaluationSuite, suite_id, "evaluation suite")
+    if suite.workspace_id != workspace_id:
+        raise HTTPException(status_code=404, detail="evaluation suite not found in workspace")
+    if (
+        not suite.dataset_version_id
+        or not suite.prompt_version_id
+        or not suite.model_configuration_id
+    ):
+        raise HTTPException(status_code=422, detail="evaluation suite is not fully configured")
+    return _create_evaluation_run(
+        workspace_id,
+        EvaluationRunCreate(
+            dataset_version_id=suite.dataset_version_id,
+            prompt_version_id=suite.prompt_version_id,
+            model_configuration_id=suite.model_configuration_id,
+            suite_id=suite.id,
+            requested_by=payload.requested_by,
+            metrics=payload.metrics or suite.metric_names or None,
+            metric_options=payload.metric_options
+            if payload.metric_options is not None
+            else suite.metric_options,
+        ),
+        session,
+    )
+
+
 @router.get(
     "/workspaces/{workspace_id}/evaluation-runs", response_model=list[EvaluationRunResponse]
 )
@@ -238,6 +292,83 @@ def list_metric_results(
         .order_by(MetricResult.test_case_id, MetricResult.metric_name)
     ).all()
     return [MetricResultResponse.model_validate(result) for result in results]
+
+
+def _run_snapshot(session: Session, run: EvaluationRun) -> RunSnapshot:
+    metric_rows = session.execute(
+        select(MetricResult, TestCase)
+        .join(TestCase, TestCase.id == MetricResult.test_case_id)
+        .where(MetricResult.run_id == run.id)
+    ).all()
+    result_rows = session.execute(
+        select(EvaluationResult, TestCase)
+        .join(TestCase, TestCase.id == EvaluationResult.test_case_id)
+        .where(EvaluationResult.run_id == run.id)
+    ).all()
+    return RunSnapshot(
+        run_id=run.id,
+        status=run.status,
+        failed_cases=run.failed_cases,
+        metric_names=tuple(run.metric_names),
+        metric_samples=tuple(
+            MetricSample(
+                metric_name=metric.metric_name,
+                value=metric.value,
+                status=metric.status,
+                tags=tuple(test_case.tags or []),
+            )
+            for metric, test_case in metric_rows
+        ),
+        cases=tuple(
+            CaseSample(status=result.status, tags=tuple(test_case.tags or []))
+            for result, test_case in result_rows
+        ),
+    )
+
+
+@router.post(
+    "/baselines/{baseline_id}/compare",
+    response_model=RegressionComparisonResponse,
+)
+def compare_baseline(
+    baseline_id: UUID,
+    candidate_run_id: UUID,
+    session: Session = Depends(get_session),
+) -> RegressionComparisonResponse:
+    baseline = require(session, Baseline, baseline_id, "baseline")
+    baseline_run = require(session, EvaluationRun, baseline.evaluation_run_id, "baseline run")
+    candidate_run = require(session, EvaluationRun, candidate_run_id, "candidate run")
+    if baseline.workspace_id != candidate_run.workspace_id:
+        raise HTTPException(status_code=404, detail="candidate run not found in baseline workspace")
+    rules = session.scalars(
+        select(RegressionRule)
+        .where(RegressionRule.baseline_id == baseline.id)
+        .order_by(RegressionRule.created_at, RegressionRule.id)
+    ).all()
+    evaluation = evaluate_regression(
+        _run_snapshot(session, baseline_run), _run_snapshot(session, candidate_run), rules
+    )
+    return RegressionComparisonResponse(
+        baseline_id=baseline.id,
+        baseline_run_id=baseline_run.id,
+        candidate_run_id=candidate_run.id,
+        status=cast(Literal["passed", "failed", "not_evaluable"], evaluation.status),
+        regression_detected=evaluation.regression_detected,
+        violations=[
+            RegressionViolationResponse(
+                rule_id=violation.rule_id,
+                rule_type=violation.rule_type,
+                metric_name=violation.metric_name,
+                tag=violation.tag,
+                baseline_value=violation.baseline_value,
+                candidate_value=violation.candidate_value,
+                threshold=violation.threshold,
+                message=violation.message,
+            )
+            for violation in evaluation.violations
+        ],
+        evaluated_at=evaluation.evaluated_at,
+    )
 
 
 @router.post("/evaluation-runs/{run_id}/cancel", response_model=EvaluationRunResponse)
@@ -405,11 +536,28 @@ def create_regression_rule(
     session: Session = Depends(get_session),
 ) -> RegressionRule:
     require(session, Baseline, baseline_id, "baseline")
-    if payload.metric_name not in METRIC_BY_NAME:
+    expected_operators = {
+        "minimum_overall_score": ">=",
+        "maximum_score_decrease": "<=",
+        "maximum_failed_cases": "<=",
+        "maximum_p95_latency": "<=",
+        "maximum_estimated_cost": "<=",
+    }
+    if payload.rule_type == "per_metric_threshold" and payload.metric_name not in METRIC_BY_NAME:
         raise HTTPException(status_code=422, detail="metric is not registered")
+    if payload.rule_type != "per_metric_threshold" and payload.metric_name is not None:
+        raise HTTPException(status_code=422, detail="metric_name is only valid for metric rules")
+    expected_operator = expected_operators.get(payload.rule_type)
+    if expected_operator and payload.operator != expected_operator:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{payload.rule_type} rules must use operator {expected_operator}",
+        )
     rule = RegressionRule(
         baseline_id=baseline_id,
+        rule_type=payload.rule_type,
         metric_name=payload.metric_name,
+        tag=payload.tag,
         operator=payload.operator,
         threshold=payload.threshold,
     )

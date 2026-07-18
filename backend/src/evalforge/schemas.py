@@ -35,12 +35,22 @@ class EvaluationSuiteCreate(APIModel):
     name: str = Field(min_length=1, max_length=160)
     slug: str | None = Field(default=None, min_length=1, max_length=80)
     description: str | None = None
+    dataset_version_id: UUID | None = None
+    prompt_version_id: UUID | None = None
+    model_configuration_id: UUID | None = None
+    metric_names: list[str] = Field(default_factory=list, max_length=32)
+    metric_options: dict[str, Any] = Field(default_factory=dict)
 
 
 class EvaluationSuiteUpdate(APIModel):
     name: str | None = Field(default=None, min_length=1, max_length=160)
     slug: str | None = Field(default=None, min_length=1, max_length=80)
     description: str | None = None
+    dataset_version_id: UUID | None = None
+    prompt_version_id: UUID | None = None
+    model_configuration_id: UUID | None = None
+    metric_names: list[str] | None = Field(default=None, max_length=32)
+    metric_options: dict[str, Any] | None = None
 
 
 class EvaluationSuiteResponse(APIModel):
@@ -49,6 +59,11 @@ class EvaluationSuiteResponse(APIModel):
     name: str
     slug: str
     description: str | None
+    dataset_version_id: UUID | None
+    prompt_version_id: UUID | None
+    model_configuration_id: UUID | None
+    metric_names: list[str]
+    metric_options: dict[str, Any]
 
 
 class DatasetCreate(APIModel):
@@ -252,6 +267,12 @@ class EvaluationRunCreate(APIModel):
     metric_options: dict[str, Any] = Field(default_factory=dict)
 
 
+class SuiteRunCreate(APIModel):
+    requested_by: str | None = Field(default=None, max_length=200)
+    metrics: list[str] | None = None
+    metric_options: dict[str, Any] | None = None
+
+
 class EvaluationAggregateResponse(APIModel):
     scope_type: str
     scope_key: str
@@ -338,8 +359,27 @@ class ProviderPricingUpdate(APIModel):
     effective_to: datetime | None = None
 
 
+REGRESSION_RULE_TYPES = (
+    "minimum_overall_score",
+    "maximum_score_decrease",
+    "maximum_failed_cases",
+    "maximum_p95_latency",
+    "maximum_estimated_cost",
+    "per_metric_threshold",
+)
+
+
 class RegressionRuleCreate(APIModel):
-    metric_name: str = Field(min_length=1, max_length=120)
+    rule_type: Literal[
+        "minimum_overall_score",
+        "maximum_score_decrease",
+        "maximum_failed_cases",
+        "maximum_p95_latency",
+        "maximum_estimated_cost",
+        "per_metric_threshold",
+    ] = "per_metric_threshold"
+    metric_name: str | None = Field(default=None, max_length=120)
+    tag: str | None = Field(default=None, max_length=120)
     operator: Literal["<", "<=", ">", ">=", "="]
     threshold: Decimal
 
@@ -347,7 +387,9 @@ class RegressionRuleCreate(APIModel):
 class RegressionRuleResponse(APIModel):
     id: UUID
     baseline_id: UUID
-    metric_name: str
+    rule_type: str
+    metric_name: str | None
+    tag: str | None
     operator: str
     threshold: Decimal
 
@@ -363,3 +405,24 @@ class BaselineResponse(APIModel):
     name: str
     evaluation_run_id: UUID
     rules: list[RegressionRuleResponse] = Field(default_factory=list)
+
+
+class RegressionViolationResponse(APIModel):
+    rule_id: UUID | None
+    rule_type: str | None
+    metric_name: str | None
+    tag: str | None
+    baseline_value: Decimal | None
+    candidate_value: Decimal | None
+    threshold: Decimal | None
+    message: str
+
+
+class RegressionComparisonResponse(APIModel):
+    baseline_id: UUID
+    baseline_run_id: UUID
+    candidate_run_id: UUID
+    status: Literal["passed", "failed", "not_evaluable"]
+    regression_detected: bool
+    violations: list[RegressionViolationResponse] = Field(default_factory=list)
+    evaluated_at: datetime

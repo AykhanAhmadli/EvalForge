@@ -43,6 +43,8 @@ The fake adapter is deterministic and requires no secret. The OpenAI adapter rea
 - `GET /api/v1/evaluation-runs/{run_id}`: inspect lifecycle state, counters, timestamps, and aggregates.
 - `GET /api/v1/evaluation-runs/{run_id}/results`: inspect incremental outputs, provider latency, token usage, and errors.
 - `POST /api/v1/evaluation-runs/{run_id}/cancel`: request cooperative cancellation.
+- `POST /api/v1/workspaces/{workspace_id}/suites/{suite_id}/runs`: start a configured suite.
+- `POST /api/v1/baselines/{baseline_id}/compare?candidate_run_id=...`: evaluate typed regression rules.
 
 Run creation accepts `metrics` and `metric_options`. When omitted, all registered metrics are
 used. A run is `completed`, `partially_failed`, `failed`, or `cancelled` based on stored case
@@ -56,3 +58,11 @@ results; no status or metric is inferred from an absent result.
 
 Pricing is selected at execution time by effective date and retained in estimated-cost metric
 details. It is intentionally not hardcoded in provider adapters.
+
+## Regression and CI
+
+- Baseline rules support overall score, score decrease, failed cases, p95 latency, estimated cost,
+  and per-metric thresholds.
+- Any rule can be limited to a dataset tag. No matching stored rows is `not_evaluable`, not a pass.
+- The CLI commands `evalforge run`, `evalforge wait`, `evalforge compare`, and `evalforge export`
+  are documented in [docs/cli.md](cli.md).

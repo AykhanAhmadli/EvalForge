@@ -53,6 +53,17 @@ class EvaluationSuite(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     slug: Mapped[str] = mapped_column(String(80), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
+    dataset_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("dataset_versions.id", ondelete="SET NULL")
+    )
+    prompt_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("prompt_versions.id", ondelete="SET NULL")
+    )
+    model_configuration_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("model_configurations.id", ondelete="SET NULL")
+    )
+    metric_names: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    metric_options: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
 
 class Dataset(Base, TimestampMixin):
@@ -278,7 +289,11 @@ class RegressionRule(Base, TimestampMixin):
     baseline_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("baselines.id", ondelete="CASCADE"), index=True
     )
-    metric_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    rule_type: Mapped[str] = mapped_column(
+        String(60), default="per_metric_threshold", nullable=False
+    )
+    metric_name: Mapped[str | None] = mapped_column(String(120))
+    tag: Mapped[str | None] = mapped_column(String(120))
     operator: Mapped[str] = mapped_column(String(8), nullable=False)
     threshold: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
 

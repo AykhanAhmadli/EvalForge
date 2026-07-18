@@ -160,7 +160,9 @@ export interface MetricResult {
 export interface RegressionRule {
   id: string;
   baseline_id: string;
-  metric_name: string;
+  rule_type: string;
+  metric_name: string | null;
+  tag: string | null;
   operator: string;
   threshold: string | number;
 }
@@ -336,7 +338,13 @@ export function createBaseline(
 
 export function createRegressionRule(
   baselineId: string,
-  body: { metric_name: string; operator: string; threshold: number },
+  body: {
+    rule_type: string;
+    metric_name?: string;
+    tag?: string;
+    operator: string;
+    threshold: number;
+  },
 ): Promise<RegressionRule> {
   return request<RegressionRule>(`/api/v1/baselines/${baselineId}/rules`, jsonInit("POST", body));
 }

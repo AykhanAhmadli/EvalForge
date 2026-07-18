@@ -2,7 +2,9 @@
 
 EvalForge is a small control plane for running repeatable LLM evaluations. The intended workflow is straightforward: keep datasets and prompt/model configurations versioned, run the same checks after a change, compare the result with a baseline, and let CI decide whether the change is acceptable.
 
-The repository includes the management and execution foundations: immutable dataset and prompt versions, safe model configurations, PostgreSQL-backed evaluation jobs, incremental results, documented metrics, cancellation, retries, and aggregate snapshots. Baselines and CI comparison are the next product layer.
+The repository includes immutable dataset and prompt versions, safe model configurations,
+PostgreSQL-backed evaluation jobs, incremental results, documented metrics, cancellation, retries,
+aggregate snapshots, typed regression rules, and a CI-oriented CLI.
 
 ## Why this shape
 
@@ -25,7 +27,7 @@ There is no Redis, Celery, Kafka, or service mesh in the repository. Those would
 frontend/  Web application and browser tests
 backend/   API, domain model, migrations, metrics, and provider adapters
 worker/    Queue polling and job execution process
-cli/       Command-line entrypoint for health checks and CI gates
+cli/       Authenticated command-line client for runs, waits, comparisons, and exports
 tests/     Backend test suite
 docs/      Architecture, lifecycle, metrics, and development notes
 infra/     Docker Compose and container definitions
@@ -65,7 +67,13 @@ npm run validate
 npm run test:e2e
 ```
 
-The API exposes health and metadata endpoints plus workspace, suite, dataset, prompt, model-configuration, pricing, and evaluation-run management. Dataset uploads accept CSV and JSONL, versions are immutable, and the API supports preview/export, prompt-variable validation, asynchronous execution, cancellation, and result aggregation. The data model and API boundaries are documented in [docs/architecture.md](docs/architecture.md). See [docs/evaluation-lifecycle.md](docs/evaluation-lifecycle.md) for worker behavior and [docs/development.md](docs/development.md) for local workflow details.
+The API exposes health and metadata endpoints plus workspace, configured suite, dataset, prompt,
+model-configuration, pricing, evaluation-run, baseline, and regression-rule management. Dataset
+uploads accept CSV and JSONL, versions are immutable, and the API supports preview/export,
+prompt-variable validation, asynchronous execution, cancellation, result aggregation, and
+regression comparison. See [docs/regression-rules.md](docs/regression-rules.md) and
+[docs/cli.md](docs/cli.md) for CI usage. The data model and API boundaries are documented in
+[docs/architecture.md](docs/architecture.md).
 
 ## Project rules
 

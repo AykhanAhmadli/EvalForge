@@ -273,6 +273,11 @@ def create_suite(
         name=payload.name,
         slug=payload.slug or slugify(payload.name),
         description=payload.description,
+        dataset_version_id=payload.dataset_version_id,
+        prompt_version_id=payload.prompt_version_id,
+        model_configuration_id=payload.model_configuration_id,
+        metric_names=payload.metric_names,
+        metric_options=payload.metric_options,
     )
     session.add(suite)
     commit(session)

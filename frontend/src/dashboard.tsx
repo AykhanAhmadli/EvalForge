@@ -98,6 +98,15 @@ const terminalStatuses = new Set([
   "canceled",
 ]);
 
+const regressionRuleTypes = [
+  ["minimum_overall_score", "Minimum overall score", ">="],
+  ["maximum_score_decrease", "Maximum score decrease", "<="],
+  ["maximum_failed_cases", "Maximum failed cases", "<="],
+  ["maximum_p95_latency", "Maximum p95 latency", "<="],
+  ["maximum_estimated_cost", "Maximum estimated cost", "<="],
+  ["per_metric_threshold", "Per-metric threshold", ""],
+] as const;
+
 function safeText(value: unknown): string {
   if (typeof value === "string") return value;
   if (value === undefined || value === null) return "Not available";
@@ -1823,9 +1832,11 @@ function RegressionPage({ workspaceId }: { workspaceId: string }) {
   const metrics = useQuery({ queryKey: ["metrics"], queryFn: fetchMetrics });
   const [name, setName] = useState("");
   const [runId, setRunId] = useState("");
+  const [ruleType, setRuleType] = useState("per_metric_threshold");
   const [metric, setMetric] = useState("exact_match");
   const [operator, setOperator] = useState("<");
   const [threshold, setThreshold] = useState("0.9");
+  const [tag, setTag] = useState("");
   const baselineMutation = useMutation({
     mutationFn: () => createBaseline(workspaceId, { name, evaluation_run_id: runId }),
     onSuccess: () => {
@@ -1836,7 +1847,9 @@ function RegressionPage({ workspaceId }: { workspaceId: string }) {
   const ruleMutation = useMutation({
     mutationFn: (targetBaselineId: string) =>
       createRegressionRule(targetBaselineId, {
-        metric_name: metric,
+        rule_type: ruleType,
+        ...(ruleType === "per_metric_threshold" ? { metric_name: metric } : {}),
+        ...(tag ? { tag } : {}),
         operator,
         threshold: Number(threshold),
       }),
@@ -1925,7 +1938,11 @@ function RegressionPage({ workspaceId }: { workspaceId: string }) {
                     <TableBody>
                       {baseline.rules.map((rule) => (
                         <TableRow key={rule.id}>
-                          <TableCell>{rule.metric_name}</TableCell>
+                          <TableCell>
+                            {rule.rule_type}
+                            {rule.metric_name ? `: ${rule.metric_name}` : ""}
+                            {rule.tag ? ` (${rule.tag})` : ""}
+                          </TableCell>
                           <TableCell>
                             {rule.operator} {rule.threshold}
                           </TableCell>
@@ -1948,23 +1965,43 @@ function RegressionPage({ workspaceId }: { workspaceId: string }) {
                     ruleMutation.mutate(baseline.id);
                   }}
                 >
-                  <FormControl size="small" sx={{ minWidth: 180 }}>
-                    <InputLabel id={`rule-metric-${baseline.id}`}>Metric</InputLabel>
+                  <FormControl size="small" sx={{ minWidth: 220 }}>
+                    <InputLabel id={`rule-type-${baseline.id}`}>Rule type</InputLabel>
                     <Select
-                      labelId={`rule-metric-${baseline.id}`}
-                      label="Metric"
-                      value={metric}
-                      onChange={(event) => setMetric(event.target.value)}
+                      labelId={`rule-type-${baseline.id}`}
+                      label="Rule type"
+                      value={ruleType}
+                      onChange={(event) => {
+                        const next = event.target.value;
+                        setRuleType(next);
+                        const definition = regressionRuleTypes.find(([type]) => type === next);
+                        if (definition?.[2]) setOperator(definition[2]);
+                      }}
                     >
-                      {metrics.data?.metrics
-                        .filter((item) => item.direction === "higher_is_better")
-                        .map((item) => (
+                      {regressionRuleTypes.map(([type, label]) => (
+                        <MenuItem key={type} value={type}>
+                          {label}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  {ruleType === "per_metric_threshold" ? (
+                    <FormControl size="small" sx={{ minWidth: 180 }}>
+                      <InputLabel id={`rule-metric-${baseline.id}`}>Metric</InputLabel>
+                      <Select
+                        labelId={`rule-metric-${baseline.id}`}
+                        label="Metric"
+                        value={metric}
+                        onChange={(event) => setMetric(event.target.value)}
+                      >
+                        {metrics.data?.metrics.map((item) => (
                           <MenuItem key={item.name} value={item.name}>
                             {item.display_name}
                           </MenuItem>
                         ))}
-                    </Select>
-                  </FormControl>
+                      </Select>
+                    </FormControl>
+                  ) : null}
                   <FormControl size="small" sx={{ minWidth: 100 }}>
                     <InputLabel id={`rule-operator-${baseline.id}`}>Rule</InputLabel>
                     <Select
@@ -1972,12 +2009,21 @@ function RegressionPage({ workspaceId }: { workspaceId: string }) {
                       label="Rule"
                       value={operator}
                       onChange={(event) => setOperator(event.target.value)}
+                      disabled={ruleType !== "per_metric_threshold"}
                     >
                       <MenuItem value="<">&lt;</MenuItem>
                       <MenuItem value="<=">&lt;=</MenuItem>
+                      <MenuItem value=">">&gt;</MenuItem>
+                      <MenuItem value=">=">&gt;=</MenuItem>
                       <MenuItem value="=">=</MenuItem>
                     </Select>
                   </FormControl>
+                  <TextField
+                    size="small"
+                    label="Tag (optional)"
+                    value={tag}
+                    onChange={(event) => setTag(event.target.value)}
+                  />
                   <TextField
                     size="small"
                     label="Threshold"

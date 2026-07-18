@@ -1,0 +1,39 @@
+name: EvalForge evaluation gate
+
+on:
+  pull_request:
+
+jobs:
+  evalforge:
+    runs-on: ubuntu-latest
+    env:
+      EVALFORGE_API_URL: ${{ vars.EVALFORGE_API_URL }}
+      EVALFORGE_API_KEY: ${{ secrets.EVALFORGE_API_KEY }}
+      EVALFORGE_WORKSPACE_ID: ${{ vars.EVALFORGE_WORKSPACE_ID }}
+      EVALFORGE_BASELINE_ID: ${{ vars.EVALFORGE_BASELINE_ID }}
+      EVALFORGE_SUITE_ID: ${{ vars.EVALFORGE_SUITE_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install EvalForge CLI
+        run: python -m pip install ./cli
+      - name: Start evaluation suite
+        id: start
+        shell: bash
+        run: |
+          run_id="$(evalforge run "$EVALFORGE_SUITE_ID" --json | python -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+      - name: Wait for evaluation
+        run: evalforge wait "${{ steps.start.outputs.run_id }}"
+      - name: Compare with baseline
+        run: evalforge compare "${{ steps.start.outputs.run_id }}"
+      - name: Export stored results
+        if: always()
+        run: evalforge export "${{ steps.start.outputs.run_id }}" --format json --output evalforge-results.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evalforge-results
+          path: evalforge-results.json
