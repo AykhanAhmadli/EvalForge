@@ -1,4 +1,4 @@
-import { ReactNode, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   AppBar,
@@ -612,6 +612,8 @@ function DatasetsPage({ workspaceId }: { workspaceId: string }) {
                     <Divider sx={{ mb: 2 }} />
                     {versions.isLoading ? (
                       <LinearProgress />
+                    ) : versions.isError ? (
+                      <ErrorState message="Dataset versions could not be loaded." />
                     ) : versions.data?.length ? (
                       <TableContainer>
                         <Table size="small">
@@ -1037,8 +1039,10 @@ function RunsPage({
     queryKey: ["run", selectedRunId],
     queryFn: () => fetchRun(selectedRunId),
     enabled: Boolean(selectedRunId),
-    refetchInterval:
-      selectedRunId && !terminalStatuses.has(runStatus(runs.data, selectedRunId)) ? 2000 : false,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status ?? runStatus(runs.data, selectedRunId);
+      return selectedRunId && !terminalStatuses.has(status) ? 2000 : false;
+    },
   });
   const results = useQuery({
     queryKey: ["run-results", selectedRunId],
@@ -1046,6 +1050,12 @@ function RunsPage({
     enabled: Boolean(selectedRunId),
     refetchInterval: selectedRunId && !terminalStatuses.has(run.data?.status ?? "") ? 2000 : false,
   });
+  useEffect(() => {
+    if (!run.data) return;
+    client.setQueryData<EvaluationRun[]>(["runs", workspaceId], (current) =>
+      current?.map((item) => (item.id === run.data.id ? run.data : item)),
+    );
+  }, [client, run.data, workspaceId]);
   if (
     metrics.isLoading ||
     runs.isLoading ||
@@ -1258,10 +1268,15 @@ function RunsPage({
           />
         )}
       </Paper>
+      {selectedRunId && run.isLoading ? <LoadingState /> : null}
+      {selectedRunId && run.isError ? (
+        <ErrorState message="The selected evaluation run could not be loaded." />
+      ) : null}
       {selectedRunId && run.data ? (
         <RunDetail
           run={run.data}
           results={results.data ?? []}
+          resultsError={results.isError}
           onCancel={
             run.data.status === "queued" || run.data.status === "running"
               ? () => cancelMutation.mutate()
@@ -1281,11 +1296,13 @@ function runStatus(runs: EvaluationRun[] | undefined, id: string): string {
 function RunDetail({
   run,
   results,
+  resultsError,
   onCancel,
   cancelPending,
 }: {
   run: EvaluationRun;
   results: EvaluationResult[];
+  resultsError: boolean;
   onCancel?: () => void;
   cancelPending: boolean;
 }) {
@@ -1324,51 +1341,55 @@ function RunDetail({
           sx={{ mb: 2 }}
         />
       ) : null}
-      <TableContainer>
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell>Case</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Output</TableCell>
-              <TableCell>Latency</TableCell>
-              <TableCell>Tokens</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {results.length ? (
-              results.map((result) => (
-                <TableRow key={result.id}>
-                  <TableCell>{result.test_case_id.slice(0, 8)}</TableCell>
-                  <TableCell>
-                    <StatusChip status={result.status} />
-                    {result.error_message ? (
-                      <Typography variant="caption" display="block" color="error">
-                        {result.error_message}
-                      </Typography>
-                    ) : null}
-                  </TableCell>
-                  <TableCell
-                    sx={{ maxWidth: 360, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
-                  >
-                    {safeText(result.output?.text)}
-                  </TableCell>
-                  <TableCell>{formatMetric(result.latency_ms, " ms")}</TableCell>
-                  <TableCell>{result.token_usage?.total_tokens ?? "Not available"}</TableCell>
-                </TableRow>
-              ))
-            ) : (
+      {resultsError ? (
+        <ErrorState message="Case results could not be loaded." />
+      ) : (
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
               <TableRow>
-                <TableCell colSpan={5}>
-                  <Typography color="text.secondary">
-                    Results will appear after the worker stores the first case.
-                  </Typography>
-                </TableCell>
+                <TableCell>Case</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>Output</TableCell>
+                <TableCell>Latency</TableCell>
+                <TableCell>Tokens</TableCell>
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
+            </TableHead>
+            <TableBody>
+              {results.length ? (
+                results.map((result) => (
+                  <TableRow key={result.id}>
+                    <TableCell>{result.test_case_id.slice(0, 8)}</TableCell>
+                    <TableCell>
+                      <StatusChip status={result.status} />
+                      {result.error_message ? (
+                        <Typography variant="caption" display="block" color="error">
+                          {result.error_message}
+                        </Typography>
+                      ) : null}
+                    </TableCell>
+                    <TableCell
+                      sx={{ maxWidth: 360, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+                    >
+                      {safeText(result.output?.text)}
+                    </TableCell>
+                    <TableCell>{formatMetric(result.latency_ms, " ms")}</TableCell>
+                    <TableCell>{result.token_usage?.total_tokens ?? "Not available"}</TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={5}>
+                    <Typography color="text.secondary">
+                      Results will appear after the worker stores the first case.
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
     </Paper>
   );
 }
@@ -1423,6 +1444,12 @@ function ComparePage({ workspaceId }: { workspaceId: string }) {
     metric,
     metrics.data?.metrics ?? [],
   );
+  const comparisonLoading =
+    selectedIds.length >= 2 &&
+    [...resultQueries, ...metricQueries, ...previewQueries].some((query) => query.isLoading);
+  const comparisonError =
+    selectedIds.length >= 2 &&
+    [...resultQueries, ...metricQueries, ...previewQueries].some((query) => query.isError);
   if (runs.isLoading || metrics.isLoading) return <LoadingState />;
   if (runs.isError || metrics.isError)
     return <ErrorState message="Comparison data could not be loaded." />;
@@ -1549,76 +1576,90 @@ function ComparePage({ workspaceId }: { workspaceId: string }) {
               Export JSON
             </Button>
           </Stack>
-          <ComparisonSummary
-            runs={selectedRuns}
-            metrics={metrics.data?.metrics ?? []}
-            rows={rows}
-          />
-          <Paper variant="outlined" sx={{ mt: 3, p: 2 }}>
-            <Typography variant="h6" sx={{ mb: 2 }}>
-              Case comparison
-            </Typography>
-            <TableContainer>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Case</TableCell>
-                    <TableCell>Input / expected</TableCell>
-                    {selectedRuns.map((run) => (
-                      <TableCell key={run.id}>Run {run.id.slice(0, 8)}</TableCell>
-                    ))}
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {rows.length ? (
-                    rows.map((row) => (
-                      <TableRow key={row.key}>
-                        <TableCell>
-                          {row.rowNumber}
-                          <Typography variant="caption" display="block">
-                            {row.tags.join(", ") || "untagged"}
-                          </Typography>
-                          <StatusChip status={row.classification} />
-                        </TableCell>
-                        <TableCell
-                          sx={{ minWidth: 240, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
-                        >
-                          Input: {safeText(row.input)}
-                          {"\n"}Expected: {safeText(row.expected)}
-                        </TableCell>
+          {comparisonLoading ? <LinearProgress sx={{ mb: 3 }} /> : null}
+          {comparisonError ? (
+            <Alert severity="error" sx={{ mb: 3 }}>
+              One or more selected run artifacts could not be loaded.
+            </Alert>
+          ) : null}
+          {!comparisonLoading && !comparisonError ? (
+            <>
+              <ComparisonSummary
+                runs={selectedRuns}
+                metrics={metrics.data?.metrics ?? []}
+                rows={rows}
+              />
+              <Paper variant="outlined" sx={{ mt: 3, p: 2 }}>
+                <Typography variant="h6" sx={{ mb: 2 }}>
+                  Case comparison
+                </Typography>
+                <TableContainer>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Case</TableCell>
+                        <TableCell>Input / expected</TableCell>
                         {selectedRuns.map((run) => (
-                          <TableCell
-                            key={run.id}
-                            sx={{
-                              minWidth: 260,
-                              whiteSpace: "pre-wrap",
-                              overflowWrap: "anywhere",
-                              verticalAlign: "top",
-                            }}
-                          >
-                            {safeText(row.runs[run.id]?.output)}
-                            {row.runs[run.id]?.error_message ? (
-                              <Typography variant="caption" color="error" display="block">
-                                {row.runs[run.id]?.error_message}
-                              </Typography>
-                            ) : null}
-                          </TableCell>
+                          <TableCell key={run.id}>Run {run.id.slice(0, 8)}</TableCell>
                         ))}
                       </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={selectedRuns.length + 2}>
-                        <Typography color="text.secondary">
-                          No cases match the current filters.
-                        </Typography>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Paper>
+                    </TableHead>
+                    <TableBody>
+                      {rows.length ? (
+                        rows.map((row) => (
+                          <TableRow key={row.key}>
+                            <TableCell>
+                              {row.rowNumber}
+                              <Typography variant="caption" display="block">
+                                {row.tags.join(", ") || "untagged"}
+                              </Typography>
+                              <StatusChip status={row.classification} />
+                            </TableCell>
+                            <TableCell
+                              sx={{
+                                minWidth: 240,
+                                whiteSpace: "pre-wrap",
+                                overflowWrap: "anywhere",
+                              }}
+                            >
+                              Input: {safeText(row.input)}
+                              {"\n"}Expected: {safeText(row.expected)}
+                            </TableCell>
+                            {selectedRuns.map((run) => (
+                              <TableCell
+                                key={run.id}
+                                sx={{
+                                  minWidth: 260,
+                                  whiteSpace: "pre-wrap",
+                                  overflowWrap: "anywhere",
+                                  verticalAlign: "top",
+                                }}
+                              >
+                                {safeText(row.runs[run.id]?.output)}
+                                {row.runs[run.id]?.error_message ? (
+                                  <Typography variant="caption" color="error" display="block">
+                                    {row.runs[run.id]?.error_message}
+                                  </Typography>
+                                ) : null}
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell colSpan={selectedRuns.length + 2}>
+                            <Typography color="text.secondary">
+                              No cases match the current filters.
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Paper>
+            </>
+          ) : null}
         </>
       ) : null}
     </>
@@ -1819,7 +1860,9 @@ function buildComparisonRows(
 }
 
 function csvEscape(value: unknown): string {
-  return `"${String(value ?? "").replaceAll('"', '""')}"`;
+  const text = String(value ?? "");
+  const safeText = /^[=+\-@]/.test(text) ? `'${text}` : text;
+  return `"${safeText.replaceAll('"', '""')}"`;
 }
 
 function RegressionPage({ workspaceId }: { workspaceId: string }) {

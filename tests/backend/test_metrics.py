@@ -31,6 +31,9 @@ def test_text_and_numeric_metrics_are_normalized() -> None:
     assert evaluate_metric(
         "numeric_tolerance", expected=10, actual=10.5, options={"tolerance": 1}
     ).value == Decimal("1")
+    assert evaluate_metric(
+        "numeric_tolerance", expected=10, actual=11.5, options={"tolerance": 1}
+    ).value == Decimal("0.5")
 
 
 def test_invalid_metric_inputs_are_preserved_as_invalid() -> None:

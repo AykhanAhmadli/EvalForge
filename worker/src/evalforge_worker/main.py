@@ -12,7 +12,7 @@ from evalforge.config import get_settings
 from evalforge.db import get_session_factory
 from evalforge.enums import EvaluationRunStatus, JobKind
 from evalforge.evaluation_engine import EvaluationEngine, utcnow
-from evalforge.models import EvaluationRun, Job
+from evalforge.models import EvaluationRun, Job, ModelConfiguration
 from evalforge.providers import TransientProviderError
 from evalforge.queue import claim_next_job, complete_job, fail_job, renew_job_lease
 
@@ -92,11 +92,15 @@ class Worker:
         run = session.get(EvaluationRun, uuid.UUID(str(run_id)))
         if run is None:
             raise ValueError(f"evaluation run not found: {run_id}")
+        model = session.get(ModelConfiguration, run.model_configuration_id)
+        if model is None:
+            raise ValueError(f"model configuration not found: {run.model_configuration_id}")
+        lease_seconds = max(300, model.timeout_seconds + 60)
         self.engine.execute(
             session,
             run,
             job_attempt=job.attempts,
-            lease_heartbeat=lambda: renew_job_lease(session, job),
+            lease_heartbeat=lambda: renew_job_lease(session, job, lease_seconds=lease_seconds),
         )
         logger.info(
             "evaluation run finished",

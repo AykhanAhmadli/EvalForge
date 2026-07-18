@@ -224,11 +224,12 @@ def evaluate_metric(
         except (TypeError, ValueError):
             return _invalid("expected and actual values must be numeric")
         difference = abs(expected_number - actual_number)
-        numeric_score = (
-            1.0
-            if difference <= tolerance
-            else (0.0 if tolerance == 0 else max(0.0, 1.0 - difference / tolerance))
-        )
+        if difference <= tolerance:
+            numeric_score = 1.0
+        elif tolerance == 0:
+            numeric_score = 0.0
+        else:
+            numeric_score = max(0.0, 1.0 - (difference - tolerance) / tolerance)
         return MetricEvaluation(
             Decimal(str(round(numeric_score, 6))),
             "valid",

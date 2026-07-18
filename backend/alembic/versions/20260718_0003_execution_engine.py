@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
 import sqlalchemy as sa
 from alembic import op
@@ -137,7 +138,7 @@ def upgrade() -> None:
                 "input_cost_per_1k": 0,
                 "output_cost_per_1k": 0,
                 "currency": "USD",
-                "effective_from": "2026-01-01T00:00:00+00:00",
+                "effective_from": datetime(2026, 1, 1, tzinfo=UTC),
             }
         ],
     )

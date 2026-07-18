@@ -183,3 +183,17 @@ def test_prompt_validation_and_model_secret_protection(workspace_id: str) -> Non
     )
     assert model_response.status_code == 201, model_response.text
     assert model_response.json()["parameters"] == {"top_p": 0.9}
+
+
+def test_model_configuration_rejects_nested_authorization_values(workspace_id: str) -> None:
+    response = client.post(
+        f"/api/v1/workspaces/{workspace_id}/model-configurations",
+        json={
+            "name": "Nested secret",
+            "provider": "fake",
+            "model_name": "fake-v1",
+            "parameters": {"headers": {"Authorization": "Bearer should-not-be-stored"}},
+        },
+    )
+
+    assert response.status_code == 422

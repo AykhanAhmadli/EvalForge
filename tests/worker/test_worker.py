@@ -25,7 +25,7 @@ def test_transient_failure_requeues_job_and_run() -> None:
         payload={"run_id": str(run_id)},
     )
     session = Mock()
-    session.get.return_value = run
+    session.get.side_effect = [run, SimpleNamespace(timeout_seconds=30), run]
     worker = Worker(worker_id="test-worker")
     worker.engine.execute = Mock(side_effect=TransientProviderError("temporary"))
 

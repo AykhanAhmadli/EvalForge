@@ -187,7 +187,17 @@ class PromptComparisonResponse(APIModel):
     unified_diff: str
 
 
-SECRET_KEY_PARTS = ("api_key", "apikey", "access_token", "secret", "password", "credential")
+SECRET_KEY_PARTS = (
+    "api_key",
+    "apikey",
+    "access_token",
+    "authorization",
+    "bearer",
+    "credential",
+    "password",
+    "secret",
+    "token",
+)
 
 
 def _reject_secret_keys(value: Any) -> None:

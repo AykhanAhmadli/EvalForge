@@ -24,13 +24,18 @@ def percentile(values: list[float], percentile_value: float) -> float | None:
     return ordered[index]
 
 
-def summarize_latencies(values: list[float], *, failures: int, total: int) -> dict[str, Any]:
+def summarize_latencies(
+    values: list[float], *, failures: int, total: int, elapsed_seconds: float | None = None
+) -> dict[str, Any]:
+    measured_seconds = elapsed_seconds
+    if measured_seconds is None:
+        measured_seconds = sum(values) / 1000 if values else 0.0
     return {
         "count": total,
         "successes": len(values),
         "failures": failures,
         "failure_rate": failures / total if total else 0.0,
-        "throughput_per_second": total / (sum(values) / 1000) if values and sum(values) else 0.0,
+        "throughput_per_second": total / measured_seconds if measured_seconds else 0.0,
         "latency_ms": {
             "median": statistics.median(values) if values else None,
             "p95": percentile(values, 95),
@@ -154,6 +159,7 @@ def measure_api(api_url: str, workspace_id: str, suite_id: str, samples: int) ->
         headers["Authorization"] = f"Bearer {api_key}"
     latencies: list[float] = []
     failures = 0
+    batch_started = time.perf_counter()
     with httpx.Client(base_url=api_url.rstrip("/"), headers=headers, timeout=15.0) as client:
         for _ in range(samples):
             started = time.perf_counter()
@@ -167,10 +173,10 @@ def measure_api(api_url: str, workspace_id: str, suite_id: str, samples: int) ->
                     latencies.append(elapsed)
                 else:
                     failures += 1
-    total_seconds = sum(latencies) / 1000 if latencies else 0.0
-    result = summarize_latencies(latencies, failures=failures, total=samples)
-    result["throughput_per_second"] = samples / total_seconds if total_seconds else 0.0
-    return result
+    elapsed_seconds = time.perf_counter() - batch_started
+    return summarize_latencies(
+        latencies, failures=failures, total=samples, elapsed_seconds=elapsed_seconds
+    )
 
 
 def measure_scheduling(
@@ -184,6 +190,7 @@ def measure_scheduling(
         headers["Authorization"] = f"Bearer {api_key}"
     latencies: list[float] = []
     failures = 0
+    batch_started = time.perf_counter()
     with httpx.Client(base_url=api_url.rstrip("/"), headers=headers, timeout=15.0) as client:
         for _ in range(count):
             started = time.perf_counter()
@@ -199,10 +206,10 @@ def measure_scheduling(
                     latencies.append(elapsed)
                 else:
                     failures += 1
-    result = summarize_latencies(latencies, failures=failures, total=count)
-    elapsed_seconds = sum(latencies) / 1000 if latencies else 0.0
-    result["throughput_per_second"] = count / elapsed_seconds if elapsed_seconds else 0.0
-    return result
+    elapsed_seconds = time.perf_counter() - batch_started
+    return summarize_latencies(
+        latencies, failures=failures, total=count, elapsed_seconds=elapsed_seconds
+    )
 
 
 def measure_queue(job_count: int, worker_count: int) -> dict[str, Any]:

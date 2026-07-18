@@ -193,7 +193,15 @@ def _parsed_cases(test_cases: Iterable[TestCase]) -> list[ParsedTestCase]:
 
 
 def _safe_parameters(value: Any) -> Any:
-    secret_parts = ("key", "token", "secret", "password", "credential")
+    secret_parts = (
+        "authorization",
+        "bearer",
+        "credential",
+        "key",
+        "password",
+        "secret",
+        "token",
+    )
     if isinstance(value, dict):
         return {
             key: _safe_parameters(item)
@@ -218,6 +226,34 @@ def _model_response(configuration: ModelConfiguration) -> ModelConfigurationResp
         timeout_seconds=configuration.timeout_seconds,
         parameters=_safe_parameters(configuration.parameters),
     )
+
+
+def _validate_suite_references(
+    session: Session,
+    workspace_id: UUID,
+    *,
+    dataset_version_id: UUID | None,
+    prompt_version_id: UUID | None,
+    model_configuration_id: UUID | None,
+) -> None:
+    if dataset_version_id is not None:
+        version = get_or_404(session, DatasetVersion, dataset_version_id, "dataset version")
+        dataset = get_or_404(session, Dataset, version.dataset_id, "dataset")
+        if dataset.workspace_id != workspace_id:
+            raise HTTPException(status_code=404, detail="dataset is not in this workspace")
+    if prompt_version_id is not None:
+        version = get_or_404(session, PromptVersion, prompt_version_id, "prompt version")
+        template = get_or_404(
+            session, PromptTemplate, version.prompt_template_id, "prompt template"
+        )
+        if template.workspace_id != workspace_id:
+            raise HTTPException(status_code=404, detail="prompt is not in this workspace")
+    if model_configuration_id is not None:
+        model = get_or_404(
+            session, ModelConfiguration, model_configuration_id, "model configuration"
+        )
+        if model.workspace_id != workspace_id:
+            raise HTTPException(status_code=404, detail="model is not in this workspace")
 
 
 @router.post("/workspaces", response_model=WorkspaceResponse, status_code=status.HTTP_201_CREATED)
@@ -287,6 +323,13 @@ def create_suite(
     session: Session = Depends(get_session),
 ) -> EvaluationSuite:
     get_or_404(session, Workspace, workspace_id, "workspace")
+    _validate_suite_references(
+        session,
+        workspace_id,
+        dataset_version_id=payload.dataset_version_id,
+        prompt_version_id=payload.prompt_version_id,
+        model_configuration_id=payload.model_configuration_id,
+    )
     suite = EvaluationSuite(
         workspace_id=workspace_id,
         name=payload.name,
@@ -328,7 +371,15 @@ def update_suite(
     suite_id: UUID, payload: EvaluationSuiteUpdate, session: Session = Depends(get_session)
 ) -> EvaluationSuite:
     suite = get_or_404(session, EvaluationSuite, suite_id, "evaluation suite")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    _validate_suite_references(
+        session,
+        suite.workspace_id,
+        dataset_version_id=changes.get("dataset_version_id", suite.dataset_version_id),
+        prompt_version_id=changes.get("prompt_version_id", suite.prompt_version_id),
+        model_configuration_id=changes.get("model_configuration_id", suite.model_configuration_id),
+    )
+    for field, value in changes.items():
         setattr(suite, field, value)
     commit(session)
     session.refresh(suite)

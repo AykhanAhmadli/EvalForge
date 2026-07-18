@@ -114,6 +114,8 @@ are not part of the repository's deterministic tests.
 - PostgreSQL is intentionally used for both persistence and the queue; scale it only after measuring
   queue contention and worker throughput.
 - Metrics are imperfect proxies for quality. A passing gate is not a general statement about a model.
+- The built-in semantic-similarity metric is a deterministic hashing proxy for reproducible demos,
+  not a trained embedding model or a claim of semantic understanding.
 - Prompt injection, tool safety, TLS, secret rotation, encryption at rest, and backup policy require
   deployment-level controls described in [docs/security.md](docs/security.md).
 

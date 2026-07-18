@@ -299,154 +299,63 @@ def upgrade() -> None:
             }
         ],
     )
-    op.bulk_insert(
-        sa.table(
-            "managed_datasets",
-            sa.column("id", postgresql.UUID(as_uuid=True)),
-            sa.column("workspace_id", postgresql.UUID(as_uuid=True)),
-            sa.column("name", sa.String()),
-            sa.column("slug", sa.String()),
-            sa.column("description", sa.Text()),
-            sa.column("tags", postgresql.JSONB()),
-        ),
-        [
-            {
-                "id": seed_dataset,
-                "workspace_id": seed_workspace,
-                "name": "Starter Questions",
-                "slug": "starter-questions",
-                "description": "Two examples used to verify the local management flow.",
-                "tags": ["demo", "local"],
-            }
-        ],
+    op.execute(
+        sa.text(
+            "INSERT INTO managed_datasets "
+            "(id, workspace_id, name, slug, description, tags) VALUES "
+            "(:id, :workspace_id, 'Starter Questions', 'starter-questions', "
+            "'Two examples used to verify the local management flow.', "
+            '\'["demo","local"]\'::jsonb'
+        ).bindparams(id=seed_dataset, workspace_id=seed_workspace)
     )
-    op.bulk_insert(
-        sa.table(
-            "dataset_versions",
-            sa.column("id", postgresql.UUID(as_uuid=True)),
-            sa.column("dataset_id", postgresql.UUID(as_uuid=True)),
-            sa.column("version_number", sa.Integer()),
-            sa.column("source_format", sa.String()),
-            sa.column("row_count", sa.Integer()),
-            sa.column("schema_fields", postgresql.JSONB()),
-            sa.column("content_hash", sa.String()),
-            sa.column("created_by", sa.String()),
-        ),
-        [
-            {
-                "id": seed_dataset_version,
-                "dataset_id": seed_dataset,
-                "version_number": 1,
-                "source_format": "jsonl",
-                "row_count": 2,
-                "schema_fields": ["question"],
-                "content_hash": "df452a9b408c05f31e935d9dcbf173e80a50a313f5557c3519017d523c231db7",
-                "created_by": "seed",
-            }
-        ],
+    op.execute(
+        sa.text(
+            "INSERT INTO dataset_versions "
+            "(id, dataset_id, version_number, source_format, row_count, schema_fields, "
+            "content_hash, created_by) VALUES "
+            "(:id, :dataset_id, 1, 'jsonl', 2, '[\"question\"]'::jsonb, "
+            "'df452a9b408c05f31e935d9dcbf173e80a50a313f5557c3519017d523c231db7', 'seed')"
+        ).bindparams(id=seed_dataset_version, dataset_id=seed_dataset)
     )
-    op.bulk_insert(
-        sa.table(
-            "test_cases",
-            sa.column("id", postgresql.UUID(as_uuid=True)),
-            sa.column("dataset_version_id", postgresql.UUID(as_uuid=True)),
-            sa.column("row_number", sa.Integer()),
-            sa.column("input", postgresql.JSONB()),
-            sa.column("expected_output", postgresql.JSONB()),
-            sa.column("metadata", postgresql.JSONB()),
-            sa.column("tags", postgresql.JSONB()),
-        ),
-        [
-            {
-                "id": seed_case_one,
-                "dataset_version_id": seed_dataset_version,
-                "row_number": 1,
-                "input": {"question": "What is 2 + 2?"},
-                "expected_output": "4",
-                "metadata": {},
-                "tags": ["arithmetic"],
-            },
-            {
-                "id": seed_case_two,
-                "dataset_version_id": seed_dataset_version,
-                "row_number": 2,
-                "input": {"question": "What is the capital of France?"},
-                "expected_output": "Paris",
-                "metadata": {},
-                "tags": ["facts"],
-            },
-        ],
+    op.execute(
+        sa.text(
+            "INSERT INTO test_cases "
+            "(id, dataset_version_id, row_number, input, expected_output, metadata, tags) VALUES "
+            '(:case_one, :version_id, 1, \'{"question":"What is 2 + 2?"}\'::jsonb, '
+            "'\"4\"'::jsonb, '{}'::jsonb, '[\"arithmetic\"]'::jsonb), "
+            "(:case_two, :version_id, 2, "
+            '\'{"question":"What is the capital of France?"}\'::jsonb, '
+            "'\"Paris\"'::jsonb, '{}'::jsonb, '[\"facts\"]'::jsonb)"
+        ).bindparams(
+            case_one=seed_case_one,
+            case_two=seed_case_two,
+            version_id=seed_dataset_version,
+        )
     )
-    op.bulk_insert(
-        sa.table(
-            "prompt_templates",
-            sa.column("id", postgresql.UUID(as_uuid=True)),
-            sa.column("workspace_id", postgresql.UUID(as_uuid=True)),
-            sa.column("name", sa.String()),
-            sa.column("slug", sa.String()),
-            sa.column("description", sa.Text()),
-            sa.column("tags", postgresql.JSONB()),
-        ),
-        [
-            {
-                "id": seed_prompt,
-                "workspace_id": seed_workspace,
-                "name": "Answer the question",
-                "slug": "answer-question",
-                "description": "Simple prompt for the starter dataset.",
-                "tags": ["demo", "local"],
-            }
-        ],
+    op.execute(
+        sa.text(
+            "INSERT INTO prompt_templates "
+            "(id, workspace_id, name, slug, description, tags) VALUES "
+            "(:id, :workspace_id, 'Answer the question', 'answer-question', "
+            "'Simple prompt for the starter dataset.', '[\"demo\",\"local\"]'::jsonb"
+        ).bindparams(id=seed_prompt, workspace_id=seed_workspace)
     )
-    op.bulk_insert(
-        sa.table(
-            "prompt_versions",
-            sa.column("id", postgresql.UUID(as_uuid=True)),
-            sa.column("prompt_template_id", postgresql.UUID(as_uuid=True)),
-            sa.column("version_number", sa.Integer()),
-            sa.column("template", sa.Text()),
-            sa.column("variables", postgresql.JSONB()),
-            sa.column("created_by", sa.String()),
-        ),
-        [
-            {
-                "id": seed_prompt_version,
-                "prompt_template_id": seed_prompt,
-                "version_number": 1,
-                "template": "Answer this question briefly: {{ question }}",
-                "variables": ["question"],
-                "created_by": "seed",
-            }
-        ],
+    op.execute(
+        sa.text(
+            "INSERT INTO prompt_versions "
+            "(id, prompt_template_id, version_number, template, variables, created_by) VALUES "
+            "(:id, :template_id, 1, 'Answer this question briefly: {{ question }}', "
+            "'[\"question\"]'::jsonb, 'seed'"
+        ).bindparams(id=seed_prompt_version, template_id=seed_prompt)
     )
-    op.bulk_insert(
-        sa.table(
-            "model_configurations",
-            sa.column("id", postgresql.UUID(as_uuid=True)),
-            sa.column("workspace_id", postgresql.UUID(as_uuid=True)),
-            sa.column("name", sa.String()),
-            sa.column("slug", sa.String()),
-            sa.column("provider", sa.String()),
-            sa.column("model_name", sa.String()),
-            sa.column("temperature", sa.Numeric()),
-            sa.column("max_tokens", sa.Integer()),
-            sa.column("timeout_seconds", sa.Integer()),
-            sa.column("parameters", postgresql.JSONB()),
-        ),
-        [
-            {
-                "id": seed_model,
-                "workspace_id": seed_workspace,
-                "name": "Deterministic Fake",
-                "slug": "deterministic-fake",
-                "provider": "fake",
-                "model_name": "evalforge-fake-v1",
-                "temperature": 0,
-                "max_tokens": 256,
-                "timeout_seconds": 30,
-                "parameters": {},
-            }
-        ],
+    op.execute(
+        sa.text(
+            "INSERT INTO model_configurations "
+            "(id, workspace_id, name, slug, provider, model_name, temperature, max_tokens, "
+            "timeout_seconds, parameters) VALUES "
+            "(:id, :workspace_id, 'Deterministic Fake', 'deterministic-fake', 'fake', "
+            "'evalforge-fake-v1', 0, 256, 30, '{}'::jsonb)"
+        ).bindparams(id=seed_model, workspace_id=seed_workspace)
     )
 
 

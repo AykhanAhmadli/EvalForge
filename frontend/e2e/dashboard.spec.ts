@@ -341,7 +341,7 @@ test("covers dataset, prompt, run, comparison, export, and regression workflows"
   await page.getByRole("combobox", { name: "Model configuration", exact: true }).click();
   await page.getByRole("option", { name: /Deterministic Fake/ }).click();
   await page.getByRole("button", { name: "Run evaluation" }).click();
-  await expect(page.getByText("running")).toBeVisible();
+  await expect(page.getByText("running").first()).toBeVisible();
 
   await navigation.getByRole("button", { name: /Compare runs/ }).click();
   await page.getByLabel(/run-1/).check();
